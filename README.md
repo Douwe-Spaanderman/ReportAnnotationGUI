@@ -97,7 +97,6 @@ Each entry is indexed by the report ID, and includes both metadata and annotated
 
 ## 🛠️ Coming Soon
 
-- Support for more control types (e.g., autocomplete text input)  
 - Multi-annotator support
 - Undo/redo functionality  
 - JSON mapping back to original CSV

@@ -39,3 +39,10 @@ groups:
         options: ["High", "Medium", "Low"]
         default: "Medium"
         required: true
+  - label: "Location"
+    controls:
+      - label: "Body Part"
+        type: autocomplete
+        options: ["Head", "Chest", "Limbs"]  
+        required: true
+        placeholder: "Type to search options"

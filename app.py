@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
     QTextEdit, QPushButton, QLabel, QProgressBar, QGroupBox,
     QSlider, QRadioButton, QCheckBox, QButtonGroup, QMessageBox,
     QLineEdit, QComboBox, QSplitter, QFileDialog, QDialog, 
-    QMenuBar, QAction, QDesktopWidget
+    QMenuBar, QAction, QDesktopWidget, QCompleter
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QPixmap
@@ -423,7 +423,6 @@ class AnnotationApp(QMainWindow):
                         if item.get("required", False):
                             self.required_controls.append(checkbox)
                     
-                    # Add free text field support
                     elif item["type"] == "text":
                         text_field = QLineEdit()
                         text_field.setPlaceholderText(item.get("placeholder", ""))
@@ -434,7 +433,6 @@ class AnnotationApp(QMainWindow):
                         if item.get("required", False):
                             self.required_controls.append(text_field)
                     
-                    # Add dropdown (combobox) support
                     elif item["type"] == "dropdown":
                         combo = QComboBox()
                         combo.addItems(item["options"])
@@ -445,8 +443,27 @@ class AnnotationApp(QMainWindow):
                         if item.get("required", False):
                             self.required_controls.append(combo)
 
+                    elif item["type"] == "autocomplete":
+                        text_field = QLineEdit()
+                        text_field.setPlaceholderText(item.get("placeholder", "Start typing..."))
+                        
+                        # Create completer with options
+                        completer = QCompleter(item["options"])
+                        completer.setCaseSensitivity(Qt.CaseInsensitive)
+                        completer.setFilterMode(Qt.MatchContains)  # Match anywhere in string
+                        completer.setCompletionMode(QCompleter.PopupCompletion)
+                        text_field.setCompleter(completer)
+                        
+                        if "default" in item:
+                            text_field.setText(item["default"])
+                        
+                        parent_layout.addWidget(text_field)
+                        self.controls[label] = text_field
+                        if item.get("required", False):
+                            self.required_controls.append(text_field)
+
         add_controls(self.annotation_layout, self.task_config["groups"])
-    
+
     def update_ui(self):
         """Update text display and progress."""
         if not self.data:
