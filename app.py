@@ -9,7 +9,8 @@ from PyQt5.QtWidgets import (
     QTextEdit, QPushButton, QLabel, QProgressBar, QGroupBox,
     QSlider, QRadioButton, QCheckBox, QButtonGroup, QMessageBox,
     QLineEdit, QComboBox, QSplitter, QFileDialog, QDialog, 
-    QMenuBar, QAction, QDesktopWidget, QCompleter
+    QMenuBar, QAction, QDesktopWidget, QCompleter, QScrollArea,
+    QSizePolicy
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QPixmap
@@ -187,39 +188,72 @@ class AnnotationApp(QMainWindow):
         # Right panel: Controls
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(2, 2, 2, 2)  # Reduce margins
+        right_layout.setSpacing(5)  # Reduce spacing between widgets
         
         # Task instructions (from YAML)
         self.instructions = QTextEdit()
         self.instructions.setReadOnly(True)
-        right_layout.addWidget(QLabel("<b>Task Instructions<b>"))
-        right_layout.addWidget(self.instructions)
+        self.instructions.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        self.instructions.setMaximumHeight(150)  # Set reasonable maximum
+        self.instructions.setMinimumHeight(20)   # Set minimum height
+        
+        instructions_label = QLabel("<b>Task Instructions</b>")
+        right_layout.addWidget(instructions_label)
+        right_layout.addWidget(self.instructions, stretch=0)  # No stretch for instructions
         
         # Navigation buttons
         nav_group = QGroupBox("Navigation")
+        nav_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         nav_layout = QHBoxLayout()
-        self.prev_button = QPushButton("⏮ Previous")
+        nav_layout.setContentsMargins(5, 5, 5, 5)
+        self.prev_button = QPushButton("⏮ Prev")
         self.next_button = QPushButton("Next ⏭")
         self.save_button = QPushButton("💾 Save")
-
-        nav_layout.addWidget(self.prev_button, stretch=1)
-        nav_layout.addWidget(self.next_button, stretch=1)
-        nav_layout.addWidget(self.save_button, stretch=1)
-
+        
+        # Make buttons more compact
         for btn in [self.prev_button, self.next_button, self.save_button]:
             btn.setMinimumHeight(32)
-
+            btn.setMaximumHeight(35)
+        
+        nav_layout.addWidget(self.prev_button)
+        nav_layout.addWidget(self.next_button)
+        nav_layout.addWidget(self.save_button)
         nav_group.setLayout(nav_layout)
-        right_layout.addWidget(nav_group)
+        right_layout.addWidget(nav_group, stretch=0)  # No stretch for navigation
         
         # Progress bar
         self.progress_bar = QProgressBar()
-        right_layout.addWidget(self.progress_bar)
+        self.progress_bar.setMaximumHeight(20)
+        right_layout.addWidget(self.progress_bar, stretch=0)
         
-        # Annotation controls
-        self.annotation_group = QGroupBox("Annotations")
-        self.annotation_layout = QVBoxLayout()
-        self.annotation_group.setLayout(self.annotation_layout)
-        right_layout.addWidget(self.annotation_group)
+        # Create a container for the fixed title and scrollable content
+        annotation_container = QWidget()
+        annotation_layout = QVBoxLayout(annotation_container)
+        annotation_layout.setContentsMargins(0, 0, 0, 0)
+        annotation_layout.setSpacing(0)
+        
+        # Fixed title (outside scroll area)
+        self.annotation_title = QLabel("<b>Annotations</b>")
+        annotation_layout.addWidget(self.annotation_title, stretch=0)
+        
+        # Scroll area for just the annotation controls
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        
+        # Annotation controls container
+        self.annotation_content = QWidget()
+        self.annotation_layout = QVBoxLayout(self.annotation_content)
+        self.annotation_layout.setContentsMargins(5, 5, 5, 5)
+        self.annotation_layout.setSpacing(5)
+        self.annotation_layout.setAlignment(Qt.AlignTop)
+        
+        # Set up the scroll area
+        scroll_area.setWidget(self.annotation_content)
+        annotation_layout.addWidget(scroll_area, stretch=1)
+        
+        right_layout.addWidget(annotation_container, stretch=1)
         
         layout.addWidget(right_panel)
         layout.setSizes([700, 300])
@@ -232,7 +266,7 @@ class AnnotationApp(QMainWindow):
         self.prev_button.clicked.connect(self.prev_entry)
         self.next_button.clicked.connect(self.next_entry)
         self.save_button.clicked.connect(self.save_and_next)
-    
+        
     def create_menu_bar(self):
         menu_bar = self.menuBar()
         
@@ -286,7 +320,7 @@ class AnnotationApp(QMainWindow):
         try:
             self.task_config = self.load_task_config(self.yaml_path)
             self.instructions.setPlainText(self.task_config.get("instructions", "No instructions provided."))
-            self.annotation_group.setTitle(self.task_config.get("name", "Annotations"))
+            self.annotation_title.setText(f'<b>{self.task_config.get("name", "Annotations")}<b>')
             
             if os.path.exists(self.output_path):
                 try:
@@ -313,7 +347,7 @@ class AnnotationApp(QMainWindow):
         self.prev_button.setEnabled(enabled)
         self.next_button.setEnabled(enabled)
         self.save_button.setEnabled(enabled)
-        self.annotation_group.setEnabled(enabled)
+        self.annotation_title.setEnabled(enabled)
 
     def load_settings(self):
         """Load user preferences from a settings file"""
@@ -378,9 +412,15 @@ class AnnotationApp(QMainWindow):
     
     def build_annotation_ui(self):
         """Recursively build UI from YAML groups with control tracking."""
-        self.controls = {}  # Dictionary to track all controls by label
-        self.button_groups = {}  # For radio button groups
-        self.required_controls = []  # List of required controls
+        self.controls = {}
+        self.button_groups = {}
+        self.required_controls = []
+
+        # Clear existing annotation widgets
+        for i in reversed(range(self.annotation_layout.count())): 
+            widget = self.annotation_layout.itemAt(i).widget()
+            if widget is not None:
+                widget.setParent(None)
 
         def add_controls(parent_layout, items):
             for item in items:
@@ -671,6 +711,28 @@ class AnnotationApp(QMainWindow):
     def apply_styles(self):
         """Apply QSS styling for a modern look."""
         self.setStyleSheet("""
+            QScrollArea {
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                background: white;
+            }
+            QScrollArea > QWidget > QWidget {
+                background: transparent;
+            }
+            QScrollBar:vertical {
+                border: none;
+                background: #f0f0f0;
+                width: 10px;
+                margin: 0px 0px 0px 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #c0c0c0;
+                min-height: 20px;
+                border-radius: 5px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
             QSplitter::handle { 
                 background-color: #ccc;
             }
@@ -681,7 +743,7 @@ class AnnotationApp(QMainWindow):
                 border: 1px solid #ddd;
                 border-radius: 5px;
                 margin-top: 10px;
-                padding-top: 15px;
+                padding-top: 3px;
                 font-weight: bold;
             }
             QPushButton {
