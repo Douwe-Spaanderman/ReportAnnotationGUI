@@ -28,3 +28,14 @@ groups:
           - type: radio  
             label: "Region"  
             options: ["Head", "Chest", "Limbs"]  
+  - label: "Patient Information"
+    controls:
+      - type: text
+        label: "Additional Notes"
+        placeholder: "Enter any additional observations"
+        required: false
+      - type: dropdown
+        label: "Diagnosis Confidence"
+        options: ["High", "Medium", "Low"]
+        default: "Medium"
+        required: true

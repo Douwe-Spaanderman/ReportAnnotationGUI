@@ -1,79 +1,198 @@
 import sys
 import csv
 import json
-import argparse
 import yaml
 import os
+import argparse
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QPushButton, QLabel, QProgressBar, QGroupBox,
-    QSlider, QRadioButton, QCheckBox, QButtonGroup, QMessageBox
+    QSlider, QRadioButton, QCheckBox, QButtonGroup, QMessageBox,
+    QLineEdit, QComboBox, QSplitter, QFileDialog, QDialog, 
+    QMenuBar, QAction, QDesktopWidget
 )
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont, QFontDatabase
+from PyQt5.QtGui import QFont, QPixmap
+
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setModal(True)
+        self.setMinimumWidth(500)
+        
+        layout = QVBoxLayout()
+        
+        # CSV file selection
+        self.csv_label = QLabel("CSV File:")
+        self.csv_path_edit = QLineEdit()
+        self.csv_browse_button = QPushButton("Browse...")
+        csv_layout = QHBoxLayout()
+        csv_layout.addWidget(self.csv_path_edit)
+        csv_layout.addWidget(self.csv_browse_button)
+        
+        # YAML file selection
+        self.yaml_label = QLabel("YAML Task File:")
+        self.yaml_path_edit = QLineEdit()
+        self.yaml_browse_button = QPushButton("Browse...")
+        yaml_layout = QHBoxLayout()
+        yaml_layout.addWidget(self.yaml_path_edit)
+        yaml_layout.addWidget(self.yaml_browse_button)
+        
+        # Output file selection
+        self.output_label = QLabel("Output JSON File (leave empty for default):")
+        self.output_path_edit = QLineEdit()
+        self.output_browse_button = QPushButton("Browse...")
+        output_layout = QHBoxLayout()
+        output_layout.addWidget(self.output_path_edit)
+        output_layout.addWidget(self.output_browse_button)
+        
+        # Buttons
+        self.ok_button = QPushButton("OK")
+        self.cancel_button = QPushButton("Cancel")
+        buttons_layout = QHBoxLayout()
+        buttons_layout.addWidget(self.ok_button)
+        buttons_layout.addWidget(self.cancel_button)
+        
+        # Add widgets to main layout
+        layout.addWidget(self.csv_label)
+        layout.addLayout(csv_layout)
+        
+        layout.addWidget(self.yaml_label)
+        layout.addLayout(yaml_layout)
+        
+        layout.addWidget(self.output_label)
+        layout.addLayout(output_layout)
+        
+        layout.addLayout(buttons_layout)
+        
+        self.setLayout(layout)
+        
+        # Connect signals
+        self.csv_browse_button.clicked.connect(lambda: self.browse_file(self.csv_path_edit, "CSV Files (*.csv)"))
+        self.yaml_browse_button.clicked.connect(lambda: self.browse_file(self.yaml_path_edit, "YAML Files (*.yaml *.yml)"))
+        self.output_browse_button.clicked.connect(lambda: self.browse_file(self.output_path_edit, "JSON Files (*.json)", save=True))
+        self.ok_button.clicked.connect(self.accept)
+        self.cancel_button.clicked.connect(self.reject)
+        
+    def browse_file(self, line_edit, file_filter, save=False):
+        if save:
+            path, _ = QFileDialog.getSaveFileName(self, "Select File", "", file_filter)
+        else:
+            path, _ = QFileDialog.getOpenFileName(self, "Select File", "", file_filter)
+        if path:
+            line_edit.setText(path)
+    
+    def get_paths(self):
+        output_path = self.output_path_edit.text()
+        if not output_path:
+            output_path = os.path.join(os.getcwd(), "annotations.json")
+        return {
+            'csv': self.csv_path_edit.text(),
+            'yaml': self.yaml_path_edit.text(),
+            'output': output_path
+        }
+    
+    def set_paths(self, csv_path, yaml_path, output_path):
+        self.csv_path_edit.setText(csv_path)
+        self.yaml_path_edit.setText(yaml_path)
+        self.output_path_edit.setText(output_path)
+
+class AboutDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("About")
+        self.setModal(True)
+        self.setFixedSize(400, 300)
+        
+        layout = QVBoxLayout()
+        
+        # Try to load the BIGR logo
+        logo_label = QLabel()
+        logo_path = os.path.join(os.path.dirname(__file__), "assets", "bigr.png")
+        if os.path.exists(logo_path):
+            pixmap = QPixmap(logo_path)
+            pixmap = pixmap.scaled(200, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            logo_label.setPixmap(pixmap)
+            logo_label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(logo_label)
+        
+        # App info
+        info_label = QLabel("""
+        <h2>Patient Report Annotator</h2>
+        <p>Developed by the BIGR group</p>
+        <p><a href="https://bigr.nl">https://bigr.nl</a></p>
+        <p>License: MIT</p>
+        <p>Version: 1.0</p>
+        """)
+        info_label.setOpenExternalLinks(True)
+        info_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(info_label)
+        
+        # Close button
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.accept)
+        layout.addWidget(close_button, alignment=Qt.AlignCenter)
+        
+        self.setLayout(layout)
 
 class AnnotationApp(QMainWindow):
-    def __init__(self, csv_path, yaml_path, output_path):
+    def __init__(self, csv_path=None, yaml_path=None, output_path=None):
         super().__init__()
         self.setWindowTitle("Patient Report Annotator")
         self.current_index = 0
         self.data = []
         self.annotations = {}
         self.button_groups = {}
-        self.output_path = output_path
-        self.suppress_save_warnings = False  # Default to showing warnings
+        self.output_path = output_path or ""
+        self.suppress_save_warnings = False
         
-        # Load task with error handling
-        try:
-            self.task_config = self.load_task_config(yaml_path)
-        except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
-            sys.exit(1)
-
-        # Load or create annotations file
-        if os.path.exists(output_path):
-            try:
-                with open(output_path, 'r') as f:
-                    self.annotations = json.load(f)
-            except:
-                QMessageBox.warning(self, "Warning", "Could not load existing annotations file. Starting fresh.")
-
+        # Initialize paths
+        self.csv_path = csv_path or ""
+        self.yaml_path = yaml_path or ""
+        
         # Setup UI
         self.init_ui()
         self.apply_styles()
-        self.load_settings()  # Load user preferences
-
-        # Load data with error handling
-        try:
-            self.load_data(csv_path)
-            self.update_progress()
-            self.find_first_unannotated()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
-            sys.exit(1)
+        
+        # If paths were provided via command line, try to initialize directly
+        if csv_path and yaml_path:
+            if self.validate_paths():
+                self.initialize_application()
+            else:
+                QMessageBox.critical(self, "Error", "Invalid file paths provided via command line")
+                self.show_settings_dialog(initial=True)
+        else:
+            # Show settings dialog if no paths were provided
+            self.show_settings_dialog(initial=True)
     
     def init_ui(self):
         """Initialize all UI components."""
+        self.showMaximized()
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        layout = QHBoxLayout(central_widget)
+        
+        # Create menu bar
+        self.create_menu_bar()
+        
+        # Create a splitter instead of direct layout
+        layout = QSplitter(Qt.Horizontal)
         
         # Left panel: Text display (monospace font)
         self.text_display = QTextEdit()
         self.text_display.setReadOnly(True)
-        self.text_display.setFont(QFont("Courier New", 10))  # Monospace for \n, \t
-        layout.addWidget(self.text_display, stretch=7)
+        self.text_display.setFont(QFont("Courier New", 10))
+        layout.addWidget(self.text_display)
         
         # Right panel: Controls
-        right_panel = QVBoxLayout()
-        layout.addLayout(right_panel, stretch=3)
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
         
         # Task instructions (from YAML)
         self.instructions = QTextEdit()
         self.instructions.setReadOnly(True)
-        self.instructions.setPlainText(self.task_config.get("instructions", "No instructions provided."))
-        right_panel.addWidget(QLabel("<b>Task Instructions<b>"))
-        right_panel.addWidget(self.instructions)
+        right_layout.addWidget(QLabel("<b>Task Instructions<b>"))
+        right_layout.addWidget(self.instructions)
         
         # Navigation buttons
         nav_group = QGroupBox("Navigation")
@@ -81,30 +200,120 @@ class AnnotationApp(QMainWindow):
         self.prev_button = QPushButton("⏮ Previous")
         self.next_button = QPushButton("Next ⏭")
         self.save_button = QPushButton("💾 Save")
-        nav_layout.addWidget(self.prev_button)
-        nav_layout.addWidget(self.next_button)
-        nav_layout.addWidget(self.save_button)
+
+        nav_layout.addWidget(self.prev_button, stretch=1)
+        nav_layout.addWidget(self.next_button, stretch=1)
+        nav_layout.addWidget(self.save_button, stretch=1)
+
+        for btn in [self.prev_button, self.next_button, self.save_button]:
+            btn.setMinimumHeight(32)
+
         nav_group.setLayout(nav_layout)
-        right_panel.addWidget(nav_group)
+        right_layout.addWidget(nav_group)
         
         # Progress bar
         self.progress_bar = QProgressBar()
-        right_panel.addWidget(self.progress_bar)
+        right_layout.addWidget(self.progress_bar)
         
         # Annotation controls
-        self.annotation_group = QGroupBox(self.task_config.get("name", "Annotations"))
+        self.annotation_group = QGroupBox("Annotations")
         self.annotation_layout = QVBoxLayout()
         self.annotation_group.setLayout(self.annotation_layout)
-        right_panel.addWidget(self.annotation_group)
+        right_layout.addWidget(self.annotation_group)
         
+        layout.addWidget(right_panel)
+        layout.setSizes([700, 300])
+
+        # Set the splitter as the main layout
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.addWidget(layout)
+
         # Signals
         self.prev_button.clicked.connect(self.prev_entry)
         self.next_button.clicked.connect(self.next_entry)
         self.save_button.clicked.connect(self.save_and_next)
+    
+    def create_menu_bar(self):
+        menu_bar = self.menuBar()
         
-        # Build UI
-        self.build_annotation_ui()
-        self.update_ui()
+        # File menu
+        file_menu = menu_bar.addMenu("File")
+        
+        settings_action = QAction("Settings", self)
+        settings_action.triggered.connect(lambda: self.show_settings_dialog(initial=False))
+        file_menu.addAction(settings_action)
+        
+        exit_action = QAction("Exit", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
+        # Help menu
+        help_menu = menu_bar.addMenu("Help")
+        
+        about_action = QAction("About", self)
+        about_action.triggered.connect(self.show_about_dialog)
+        help_menu.addAction(about_action)
+    
+    def show_about_dialog(self):
+        dialog = AboutDialog(self)
+        dialog.exec_()
+    
+    def show_settings_dialog(self, initial=False):
+        dialog = SettingsDialog(self)
+        if not initial:
+            dialog.set_paths(self.csv_path, self.yaml_path, self.output_path)
+        
+        if dialog.exec_() == QDialog.Accepted:
+            paths = dialog.get_paths()
+            self.csv_path = paths['csv']
+            self.yaml_path = paths['yaml']
+            self.output_path = paths['output']
+            
+            if self.validate_paths():
+                self.initialize_application()
+            else:
+                if not initial:
+                    QMessageBox.warning(self, "Warning", "Invalid file paths. Please check the files and try again.")
+                else:
+                    # If initial setup fails, close the app
+                    self.close()
+    
+    def validate_paths(self):
+        return all(os.path.exists(path) for path in [self.csv_path, self.yaml_path]) and self.output_path
+    
+    def initialize_application(self):
+        """Initialize the application with the selected files"""
+        try:
+            self.task_config = self.load_task_config(self.yaml_path)
+            self.instructions.setPlainText(self.task_config.get("instructions", "No instructions provided."))
+            self.annotation_group.setTitle(self.task_config.get("name", "Annotations"))
+            
+            if os.path.exists(self.output_path):
+                try:
+                    with open(self.output_path, 'r') as f:
+                        self.annotations = json.load(f)
+                except:
+                    QMessageBox.warning(self, "Warning", "Could not load existing annotations file. Starting fresh.")
+
+            self.load_data(self.csv_path)
+            self.build_annotation_ui()
+            self.update_progress()
+            self.find_first_unannotated()
+            self.update_ui()
+            
+            # Enable UI elements now that we have valid files
+            self.set_ui_enabled(True)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to initialize application: {str(e)}")
+            self.set_ui_enabled(False)
+    
+    def set_ui_enabled(self, enabled):
+        """Enable or disable UI elements"""
+        self.text_display.setEnabled(enabled)
+        self.prev_button.setEnabled(enabled)
+        self.next_button.setEnabled(enabled)
+        self.save_button.setEnabled(enabled)
+        self.annotation_group.setEnabled(enabled)
 
     def load_settings(self):
         """Load user preferences from a settings file"""
@@ -159,7 +368,7 @@ class AnnotationApp(QMainWindow):
     def load_data(self, csv_path):
         """Load and validate CSV data."""
         try:
-            with open(csv_path, 'r') as f:
+            with open(csv_path, mode="r", encoding="utf-8-sig") as f:
                 reader = csv.DictReader(f)
                 if not {"Patient-ID", "Report-ID", "Text"}.issubset(reader.fieldnames):
                     raise ValueError("CSV must include columns: Patient-ID, Report-ID, Text")
@@ -213,6 +422,28 @@ class AnnotationApp(QMainWindow):
                         self.controls[label] = checkbox
                         if item.get("required", False):
                             self.required_controls.append(checkbox)
+                    
+                    # Add free text field support
+                    elif item["type"] == "text":
+                        text_field = QLineEdit()
+                        text_field.setPlaceholderText(item.get("placeholder", ""))
+                        if "default" in item:
+                            text_field.setText(item["default"])
+                        parent_layout.addWidget(text_field)
+                        self.controls[label] = text_field
+                        if item.get("required", False):
+                            self.required_controls.append(text_field)
+                    
+                    # Add dropdown (combobox) support
+                    elif item["type"] == "dropdown":
+                        combo = QComboBox()
+                        combo.addItems(item["options"])
+                        if "default" in item and item["default"] in item["options"]:
+                            combo.setCurrentText(item["default"])
+                        parent_layout.addWidget(combo)
+                        self.controls[label] = combo
+                        if item.get("required", False):
+                            self.required_controls.append(combo)
 
         add_controls(self.annotation_layout, self.task_config["groups"])
     
@@ -329,8 +560,14 @@ class AnnotationApp(QMainWindow):
             elif isinstance(control, QCheckBox):
                 if not control.isChecked():
                     return False
+            elif isinstance(control, QLineEdit):  # Text field validation
+                if not control.text().strip():
+                    return False
+            elif isinstance(control, QComboBox):  # Dropdown validation
+                if not control.currentText():
+                    return False
         return True
-    
+        
     def collect_annotation_data(self):
         """Gather all control values"""
         data = {}
@@ -342,11 +579,15 @@ class AnnotationApp(QMainWindow):
                 data[label] = checked.text() if checked else None
             elif isinstance(control, QCheckBox):
                 data[label] = control.isChecked()
+            elif isinstance(control, QLineEdit):  # Text field
+                data[label] = control.text()
+            elif isinstance(control, QComboBox):  # Dropdown
+                data[label] = control.currentText()
         return data
 
     def clear_controls(self):
         """Reset all input controls to default values"""
-        for control in self.controls.values():
+        for label, control in self.controls.items():
             if isinstance(control, QSlider):
                 control.setValue(control.minimum())
             elif isinstance(control, QButtonGroup):
@@ -356,6 +597,30 @@ class AnnotationApp(QMainWindow):
                 control.setExclusive(True)
             elif isinstance(control, QCheckBox):
                 control.setChecked(False)
+            elif isinstance(control, QLineEdit):  # Text field
+                # Reset to default if specified in YAML, else empty
+                default = next((item.get("default", "") for item in self.find_control_config(label) if "default" in item), "")
+                control.setText(default)
+            elif isinstance(control, QComboBox):  # Dropdown
+                # Reset to default if specified in YAML, else first item
+                config = next((item for item in self.find_control_config(label)), {})
+                if "default" in config and config["default"] in [control.itemText(i) for i in range(control.count())]:
+                    control.setCurrentText(config["default"])
+                else:
+                    control.setCurrentIndex(0)
+
+    def find_control_config(self, label):
+        """Helper to find control config by label"""
+        def search_items(items):
+            for item in items:
+                if "controls" in item:
+                    for control in item["controls"]:
+                        if control.get("label") == label:
+                            yield control
+                elif "groups" in item:
+                    yield from search_items(item["groups"])
+        
+        return list(search_items(self.task_config["groups"]))
 
     def save_annotations(self):
         """Save current annotations with validation."""
@@ -389,6 +654,9 @@ class AnnotationApp(QMainWindow):
     def apply_styles(self):
         """Apply QSS styling for a modern look."""
         self.setStyleSheet("""
+            QSplitter::handle { 
+                background-color: #ccc;
+            }
             QMainWindow {
                 background-color: #f5f5f5;
             }
@@ -426,13 +694,23 @@ class AnnotationApp(QMainWindow):
         """)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--csv", required=True, help="Path to CSV file")
-    parser.add_argument("--yaml", required=True, help="Path to YAML task file")
-    parser.add_argument("--output", required=True, help="Path to output JSON file")
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Patient Report Annotator')
+    parser.add_argument('--csv', help='Path to CSV file')
+    parser.add_argument('--yaml', help='Path to YAML task file')
+    parser.add_argument('--output', help='Path to output JSON file')
     args = parser.parse_args()
     
     app = QApplication(sys.argv)
-    window = AnnotationApp(args.csv, args.yaml, args.output)
+    
+    # Create application window with or without command line arguments
+    window = AnnotationApp(csv_path=args.csv, yaml_path=args.yaml, output_path=args.output)
+    
+    # Center the window on screen
+    qt_rectangle = window.frameGeometry()
+    center_point = QDesktopWidget().availableGeometry().center()
+    qt_rectangle.moveCenter(center_point)
+    window.move(qt_rectangle.topLeft())
+    
     window.show()
     sys.exit(app.exec_())
