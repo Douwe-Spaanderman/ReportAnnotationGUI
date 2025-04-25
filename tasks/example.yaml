@@ -1,0 +1,30 @@
+name: "Medical Report Annotation"  
+instructions: |
+  1. Read the patient report carefully.
+  2. Use the sliders/buttons to annotate:
+     - Severity (1-5)
+     - Symptom presence (Yes/No)
+  3. Click 'Save' after each annotation.
+
+groups:  
+  - label: "Patient Details"  
+    controls:  
+      - type: radio  
+        label: "Gender"  
+        options: ["Male", "Female", "Other"]
+        required: true
+  - label: "Symptoms"  
+    groups:  
+      - label: "Severity"  
+        controls:  
+          - type: slider  
+            label: "Pain Level (1-10)"  
+            min: 1  
+            max: 10  
+          - type: checkbox  
+            label: "Chronic?"  
+      - label: "Location"  
+        controls:  
+          - type: radio  
+            label: "Region"  
+            options: ["Head", "Chest", "Limbs"]  
