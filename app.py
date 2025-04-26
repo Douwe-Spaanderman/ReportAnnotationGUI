@@ -4,16 +4,24 @@ import json
 import yaml
 import os
 import argparse
+import datetime
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QPushButton, QLabel, QProgressBar, QGroupBox,
     QSlider, QRadioButton, QCheckBox, QButtonGroup, QMessageBox,
     QLineEdit, QComboBox, QSplitter, QFileDialog, QDialog, 
-    QMenuBar, QAction, QDesktopWidget, QCompleter, QScrollArea,
-    QSizePolicy
+    QAction, QDesktopWidget, QCompleter, QScrollArea,
+    QSizePolicy, QFrame
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QPixmap
+
+class QHLine(QFrame):
+    def __init__(self):
+        super().__init__()
+        self.setFrameShape(QFrame.HLine)
+        self.setFrameShadow(QFrame.Sunken)
+        self.setStyleSheet("color: #ccc;")
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
@@ -23,6 +31,22 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(500)
         
         layout = QVBoxLayout()
+        
+        # Annotator Name Field
+        self.annotator_label = QLabel("Annotator Name (optional):")
+        self.annotator_name = QLineEdit()
+        self.annotator_name.setPlaceholderText("Enter your name")
+        layout.addWidget(self.annotator_label)
+        layout.addWidget(self.annotator_name)
+        
+        # Patient Reports View Option
+        self.group_reports_check = QCheckBox("Show all reports for a patient at once")
+        self.group_reports_check.setChecked(False)  # Default unchecked
+        layout.addWidget(self.group_reports_check)
+        
+        # Add separator
+        layout.addWidget(QLabel("File Paths:"))
+        layout.addWidget(QHLine())
         
         # CSV file selection
         self.csv_label = QLabel("CSV File:")
@@ -58,13 +82,10 @@ class SettingsDialog(QDialog):
         # Add widgets to main layout
         layout.addWidget(self.csv_label)
         layout.addLayout(csv_layout)
-        
         layout.addWidget(self.yaml_label)
         layout.addLayout(yaml_layout)
-        
         layout.addWidget(self.output_label)
         layout.addLayout(output_layout)
-        
         layout.addLayout(buttons_layout)
         
         self.setLayout(layout)
@@ -75,7 +96,29 @@ class SettingsDialog(QDialog):
         self.output_browse_button.clicked.connect(lambda: self.browse_file(self.output_path_edit, "JSON Files (*.json)", save=True))
         self.ok_button.clicked.connect(self.accept)
         self.cancel_button.clicked.connect(self.reject)
-        
+    
+    def get_settings(self):
+        """Return all settings as a dictionary."""
+        output_path = self.output_path_edit.text()
+        if not output_path:
+            output_path = os.path.join(os.getcwd(), "annotations.json")
+            
+        return {
+            'annotator_name': self.annotator_name.text().strip(),
+            'group_patient_reports': self.group_reports_check.isChecked(),
+            'csv': self.csv_path_edit.text(),
+            'yaml': self.yaml_path_edit.text(),
+            'output': output_path
+        }
+    
+    def set_settings(self, settings):
+        """Set all settings from a dictionary."""
+        self.annotator_name.setText(settings.get('annotator_name', ''))
+        self.group_reports_check.setChecked(settings.get('group_patient_reports', False))
+        self.csv_path_edit.setText(settings.get('csv', ''))
+        self.yaml_path_edit.setText(settings.get('yaml', ''))
+        self.output_path_edit.setText(settings.get('output', ''))
+    
     def browse_file(self, line_edit, file_filter, save=False):
         if save:
             path, _ = QFileDialog.getSaveFileName(self, "Select File", "", file_filter)
@@ -83,21 +126,6 @@ class SettingsDialog(QDialog):
             path, _ = QFileDialog.getOpenFileName(self, "Select File", "", file_filter)
         if path:
             line_edit.setText(path)
-    
-    def get_paths(self):
-        output_path = self.output_path_edit.text()
-        if not output_path:
-            output_path = os.path.join(os.getcwd(), "annotations.json")
-        return {
-            'csv': self.csv_path_edit.text(),
-            'yaml': self.yaml_path_edit.text(),
-            'output': output_path
-        }
-    
-    def set_paths(self, csv_path, yaml_path, output_path):
-        self.csv_path_edit.setText(csv_path)
-        self.yaml_path_edit.setText(yaml_path)
-        self.output_path_edit.setText(output_path)
 
 class AboutDialog(QDialog):
     def __init__(self, parent=None):
@@ -147,6 +175,10 @@ class AnnotationApp(QMainWindow):
         self.button_groups = {}
         self.output_path = output_path or ""
         self.suppress_save_warnings = False
+        self.group_patient_reports = False
+        self.current_annotator_name = "Unnamed"
+        self.all_annotations = []  # Stores all annotations in flat list
+        self.current_report_annotations = {}  # Current annotator's annotations for the report
         
         # Initialize paths
         self.csv_path = csv_path or ""
@@ -158,7 +190,7 @@ class AnnotationApp(QMainWindow):
         
         # If paths were provided via command line, try to initialize directly
         if csv_path and yaml_path:
-            if self.validate_paths():
+            if self.validate_paths(csv_path, yaml_path, output_path):
                 self.initialize_application()
             else:
                 QMessageBox.critical(self, "Error", "Invalid file paths provided via command line")
@@ -295,26 +327,47 @@ class AnnotationApp(QMainWindow):
     def show_settings_dialog(self, initial=False):
         dialog = SettingsDialog(self)
         if not initial:
-            dialog.set_paths(self.csv_path, self.yaml_path, self.output_path)
+            dialog.set_settings({
+                'annotator_name': self.current_annotator_name,
+                'group_patient_reports': self.group_patient_reports,
+                'csv': self.csv_path,
+                'yaml': self.yaml_path,
+                'output': self.output_path
+            })
         
         if dialog.exec_() == QDialog.Accepted:
-            paths = dialog.get_paths()
-            self.csv_path = paths['csv']
-            self.yaml_path = paths['yaml']
-            self.output_path = paths['output']
+            settings = dialog.get_settings()
+            new_annotator = settings['annotator_name']
+
+            # Only proceed if paths are valid
+            if not self.validate_paths(settings['csv'], settings['yaml'], settings['output']):
+                QMessageBox.warning(self, "Warning", "Invalid file paths. Please check the files and try again.")
+                return
             
-            if self.validate_paths():
-                self.initialize_application()
-            else:
-                if not initial:
-                    QMessageBox.warning(self, "Warning", "Invalid file paths. Please check the files and try again.")
-                else:
-                    # If initial setup fails, close the app
-                    self.close()
+            # Save current work before changing anything
+            if self.current_report_annotations:
+                self.save_annotations()
+                
+            # Update paths and annotator
+            self.csv_path = settings['csv']
+            self.yaml_path = settings['yaml']
+            self.output_path = settings['output']
+            self.current_annotator_name = new_annotator
+            
+            # Handle file path changes if needed
+            try:
+                self.load_data(self.csv_path)
+                self.load_annotations()
+                self.update_progress()
+                self.find_first_unannotated()
+                self.update_ui()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to reload data: {str(e)}")
     
-    def validate_paths(self):
-        return all(os.path.exists(path) for path in [self.csv_path, self.yaml_path]) and self.output_path
-    
+    def validate_paths(self, csv_path, yaml_path, output_path):
+        """Validate all file paths."""
+        return all(os.path.exists(p) for p in [csv_path, yaml_path]) and output_path
+        
     def initialize_application(self):
         """Initialize the application with the selected files"""
         try:
@@ -322,12 +375,8 @@ class AnnotationApp(QMainWindow):
             self.instructions.setPlainText(self.task_config.get("instructions", "No instructions provided."))
             self.annotation_title.setText(f'<b>{self.task_config.get("name", "Annotations")}<b>')
             
-            if os.path.exists(self.output_path):
-                try:
-                    with open(self.output_path, 'r') as f:
-                        self.annotations = json.load(f)
-                except:
-                    QMessageBox.warning(self, "Warning", "Could not load existing annotations file. Starting fresh.")
+            # Load existing annotations
+            self.load_annotations()
 
             self.load_data(self.csv_path)
             self.build_annotation_ui()
@@ -372,9 +421,16 @@ class AnnotationApp(QMainWindow):
             pass  # If saving fails, continue silently
 
     def find_first_unannotated(self):
-        """Find the first unannotated entry"""
+        """Find the first unannotated entry for current annotator."""
         for i, entry in enumerate(self.data):
-            if entry["Report-ID"] not in self.annotations:
+            report_id = entry["Report-ID"]
+            # Check if current annotator has annotated this report
+            has_annotation = any(
+                a["report_id"] == report_id and 
+                a["annotator"] == self.current_annotator_name
+                for a in self.all_annotations
+            )
+            if not has_annotation:
                 self.current_index = i
                 self.update_ui()
                 return
@@ -382,11 +438,27 @@ class AnnotationApp(QMainWindow):
         self.update_ui()
     
     def update_progress(self):
-        """Update progress bar based on annotations"""
+        """Update progress bar for current annotator."""
+        if not self.current_annotator_name:
+            return
+            
+        annotated_reports = {
+            a["report_id"] for a in self.all_annotations 
+            if a["annotator"] == self.current_annotator_name
+        }
         annotated_count = sum(1 for entry in self.data 
-                            if entry["Report-ID"] in self.annotations)
-        self.progress_bar.setMaximum(len(self.data))
+                            if entry["Report-ID"] in annotated_reports)
+        total_count = len(self.data)
+        
+        self.progress_bar.setMaximum(total_count)
         self.progress_bar.setValue(annotated_count)
+        
+        # Update status bar
+        self.statusBar().showMessage(
+            f"Annotator: {self.current_annotator_name or 'Unnamed'} | "
+            f"Progress: {annotated_count}/{total_count} "
+            f"({annotated_count/total_count:.1%})"
+        )
     
     def load_task_config(self, yaml_path):
         """Load and validate YAML task file."""
@@ -517,20 +589,31 @@ class AnnotationApp(QMainWindow):
         )
 
         # Load existing annotations if present
-        if entry["Report-ID"] in self.annotations:
-            self.load_annotations(entry["Report-ID"])
+        self.load_annotations_for_report(entry["Report-ID"])
+        self.load_annotation_values()
 
-    def load_annotations(self, report_id):
+    def load_annotations(self):
         """Load existing annotations for a report into the UI."""
-        if report_id not in self.annotations:
-            return
-            
-        annotations = self.annotations[report_id].get("annotations", {})
+        self.all_annotations = []
+        if os.path.exists(self.output_path):
+            try:
+                with open(self.output_path, 'r') as f:
+                    data = json.load(f)
+                    if isinstance(data, dict) and "annotations" in data:
+                        self.all_annotations = data["annotations"]
+                    elif isinstance(data, list):
+                        self.all_annotations = data
+            except Exception as e:
+                QMessageBox.warning(self, "Warning", f"Could not load annotations: {str(e)}")
         
-        for label, value in annotations.items():
-            if label in self.controls:
-                control = self.controls[label]
-                
+        # Initialize current report annotations
+        self.current_report_annotations = {}
+
+    def load_annotation_values(self):
+        """Load annotation values into UI controls."""
+        for label, control in self.controls.items():
+            if label in self.current_report_annotations:
+                value = self.current_report_annotations[label]
                 if isinstance(control, QSlider):
                     control.setValue(value)
                 elif isinstance(control, QButtonGroup):
@@ -540,26 +623,21 @@ class AnnotationApp(QMainWindow):
                             break
                 elif isinstance(control, QCheckBox):
                     control.setChecked(value)
+                elif isinstance(control, (QLineEdit, QComboBox)):
+                    control.setCurrentText(value) if isinstance(control, QComboBox) else control.setText(value)
 
     def save_and_next(self):
         """Save current annotations and move to next unannotated entry."""
         if not self.validate_annotations():
-            if not self.suppress_save_warnings:
-                msg = QMessageBox()
-                msg.setIcon(QMessageBox.Warning)
-                msg.setText("Please complete all required fields")
-                msg.setWindowTitle("Incomplete Annotation")
-                
-                # Add checkbox to suppress future warnings
-                cb = QCheckBox("Don't show this message again")
-                msg.setCheckBox(cb)
-                msg.exec_()
-                
-                if cb.isChecked():
-                    self.suppress_save_warnings = True
-                    self.save_settings()
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Warning)
+            msg.setText("Please complete all required fields")
+            msg.setWindowTitle("Incomplete Annotation")
+            msg.exec_()
             return
             
+        self.current_report_annotations = self.collect_annotation_data()
+
         if self.save_annotations():
             self.next_entry(skip_annotated=True)
             if not self.suppress_save_warnings:
@@ -681,15 +759,38 @@ class AnnotationApp(QMainWindow):
 
     def save_annotations(self):
         """Save current annotations with validation."""
-        entry = self.data[self.current_index]
-        self.annotations[entry["Report-ID"]] = {
-            "Patient-ID": entry["Patient-ID"],
-            "annotations": self.collect_annotation_data()
-        }
-        
         try:
+            # Update current annotation if it exists
+            entry = self.data[self.current_index]
+            report_id = entry["Report-ID"]
+            patient_id = entry["Patient-ID"]
+            
+            # Create a copy of existing annotations excluding current report+annotator
+            updated_annotations = [
+                a for a in self.all_annotations
+                if not (a["report_id"] == report_id and 
+                    a["annotator"] == self.current_annotator_name)
+            ]
+            
+            # Add current annotation if we have data
+            if self.current_report_annotations:
+                updated_annotations.append({
+                    "annotator": self.current_annotator_name,
+                    "patient_id": patient_id,
+                    "report_id": report_id,
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "annotation": self.current_report_annotations
+                })
+            
+            # Update our in-memory store
+            self.all_annotations = updated_annotations
+            
             with open(self.output_path, 'w') as f:
-                json.dump(self.annotations, f, indent=2)
+                json.dump({
+                    "annotations": self.all_annotations,
+                    "timestamp": datetime.datetime.now().isoformat()
+                }, f, indent=2)
+            
             self.update_progress()
             return True
         except Exception as e:
@@ -707,7 +808,21 @@ class AnnotationApp(QMainWindow):
                     self.suppress_save_warnings = True
                     self.save_settings()
             return False
-    
+        
+    def load_annotations_for_report(self, report_id):
+        """Load existing annotations for current report and annotator."""
+        self.current_report_annotations = {}
+        if not self.current_annotator_name:
+            return
+            
+        # Find most recent annotation for this report+annotator
+        matching_annotations = [a for a in self.all_annotations 
+                            if a["report_id"] == report_id and 
+                                a["annotator"] == self.current_annotator_name]
+        
+        if matching_annotations:
+            self.current_report_annotations = matching_annotations[-1]["annotation"]
+
     def apply_styles(self):
         """Apply QSS styling for a modern look."""
         self.setStyleSheet("""
