@@ -356,11 +356,7 @@ class AnnotationApp(QMainWindow):
             
             # Handle file path changes if needed
             try:
-                self.load_data(self.csv_path)
-                self.load_annotations()
-                self.update_progress()
-                self.find_first_unannotated()
-                self.update_ui()
+                self.initialize_application()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to reload data: {str(e)}")
     
