@@ -6,7 +6,7 @@ A lightweight, PyQt5-based GUI for annotating medical reports using structured t
 
 - Load free-text medical reports from a CSV file
 - Automatically generate an annotation interface from a YAML task definition
-- Save validated annotations to a structured JSON file
+- Save validated annotations to a structured JSON file, and export back to CSV
 - Multi-user annotation support with individual tracking
 - Multi-report annotation support
 
@@ -99,8 +99,7 @@ Each entry is indexed by the report ID, and includes both metadata and annotated
 
 ## 🛠️ Coming Soon
 
-- Undo/redo functionality  
-- JSON mapping back to original CSV
+- Undo/redo functionality
 
 ## 📬 Feedback & Contributions
 

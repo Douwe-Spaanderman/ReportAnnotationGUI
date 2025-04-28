@@ -309,7 +309,12 @@ class AnnotationApp(QMainWindow):
         settings_action = QAction("Settings", self)
         settings_action.triggered.connect(lambda: self.show_settings_dialog(initial=False))
         file_menu.addAction(settings_action)
-        
+
+        # Add new Save to CSV action
+        save_csv_action = QAction("Save to CSV", self)
+        save_csv_action.triggered.connect(self.save_annotations_to_csv)
+        file_menu.addAction(save_csv_action)
+            
         exit_action = QAction("Exit", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
@@ -969,7 +974,67 @@ class AnnotationApp(QMainWindow):
                     self.suppress_save_warnings = True
                     self.save_settings()
             return False
-        
+    
+    def save_annotations_to_csv(self):
+        """Save all annotations to a CSV file."""
+        if not self.all_annotations:
+            QMessageBox.warning(self, "Warning", "No annotations to save")
+            return
+
+        # Get output path from user
+        options = QFileDialog.Options()
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Annotations as CSV",
+            "",
+            "CSV Files (*.csv)",
+            options=options
+        )
+
+        if not file_path:
+            return  # User cancelled
+
+        try:
+            if not file_path.endswith('.csv'):
+                file_path += '.csv'
+                
+            # Collect all unique field names from annotations
+            fieldnames = set()
+            for annotation in self.all_annotations:
+                fieldnames.update(annotation["annotation"].keys())
+            
+            # Standard fields we always include
+            standard_fields = [
+                "annotator",
+                "patient_id",
+                "report_id",
+                "timestamp",
+                "combined_report_ids"
+            ]
+            
+            # Combine and order fields
+            all_fields = standard_fields + sorted(f for f in fieldnames if f not in standard_fields)
+
+            with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=all_fields)
+                writer.writeheader()
+                
+                for annotation in self.all_annotations:
+                    row = {
+                        "annotator": annotation["annotator"],
+                        "patient_id": annotation["patient_id"],
+                        "report_id": annotation["report_id"],
+                        "timestamp": annotation["timestamp"],
+                        "combined_report_ids": annotation.get("combined_report_ids", "")
+                    }
+                    # Add all annotation fields
+                    row.update(annotation["annotation"])
+                    writer.writerow(row)
+
+            QMessageBox.information(self, "Success", f"Annotations saved to {file_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save CSV: {str(e)}")
+
     def load_annotations_for_current_view(self):
         """Load annotations for all reports in current view."""
         self.current_report_annotations = {}
