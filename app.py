@@ -5,6 +5,7 @@ import yaml
 import os
 import argparse
 import datetime
+from dateutil import parser as dateparser
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QPushButton, QLabel, QProgressBar, QGroupBox,
@@ -337,7 +338,6 @@ class AnnotationApp(QMainWindow):
         
         if dialog.exec_() == QDialog.Accepted:
             settings = dialog.get_settings()
-            new_annotator = settings['annotator_name']
 
             # Only proceed if paths are valid
             if not self.validate_paths(settings['csv'], settings['yaml'], settings['output']):
@@ -352,9 +352,10 @@ class AnnotationApp(QMainWindow):
             self.csv_path = settings['csv']
             self.yaml_path = settings['yaml']
             self.output_path = settings['output']
-            self.current_annotator_name = new_annotator
+            self.current_annotator_name = settings['annotator_name']
+            self.group_patient_reports = settings['group_patient_reports'] 
             
-            # Handle file path changes if needed
+            # Reload data with new settings
             try:
                 self.initialize_application()
             except Exception as e:
@@ -434,26 +435,48 @@ class AnnotationApp(QMainWindow):
         self.update_ui()
     
     def update_progress(self):
-        """Update progress bar for current annotator."""
-        if not self.current_annotator_name:
+        """Update progress bar considering current mode."""
+        if not self.current_annotator_name or not self.data:
             return
             
-        annotated_reports = {
-            a["report_id"] for a in self.all_annotations 
+        # Get all annotations for current annotator
+        annotator_annotations = {
+            a["report_id"]: a for a in self.all_annotations 
             if a["annotator"] == self.current_annotator_name
         }
-        annotated_count = sum(1 for entry in self.data 
-                            if entry["Report-ID"] in annotated_reports)
-        total_count = len(self.data)
         
-        self.progress_bar.setMaximum(total_count)
-        self.progress_bar.setValue(annotated_count)
+        if self.group_patient_reports:
+            # Group mode - count completed patients
+            patient_status = {}
+            for entry in self.data:
+                patient_id = entry["Patient-ID"]
+                report_id = entry["Report-ID"]
+                
+                if patient_id not in patient_status:
+                    patient_status[patient_id] = True
+                
+                if report_id not in annotator_annotations:
+                    patient_status[patient_id] = False
+            
+            completed_patients = sum(1 for status in patient_status.values() if status)
+            total_patients = len(patient_status)
+            
+            self.progress_bar.setMaximum(total_patients)
+            self.progress_bar.setValue(completed_patients)
+        else:
+            # Single report mode
+            annotated_count = len(annotator_annotations)
+            total_count = len(self.data)
+            
+            self.progress_bar.setMaximum(total_count)
+            self.progress_bar.setValue(annotated_count)
         
         # Update status bar
+        mode = "All Patient Reports" if self.group_patient_reports else "Single Report"
         self.statusBar().showMessage(
             f"Annotator: {self.current_annotator_name or 'Unnamed'} | "
-            f"Progress: {annotated_count}/{total_count} "
-            f"({annotated_count/total_count:.1%})"
+            f"Progress: {self.progress_bar.value()}/{self.progress_bar.maximum()} | "
+            f"Mode: {mode}"
         )
     
     def load_task_config(self, yaml_path):
@@ -468,13 +491,25 @@ class AnnotationApp(QMainWindow):
             raise ValueError(f"Invalid YAML: {str(e)}")
     
     def load_data(self, csv_path):
-        """Load and validate CSV data."""
+        """Load and validate CSV data, parsing dates."""
         try:
             with open(csv_path, mode="r", encoding="utf-8-sig") as f:
                 reader = csv.DictReader(f)
-                if not {"Patient-ID", "Report-ID", "Text"}.issubset(reader.fieldnames):
-                    raise ValueError("CSV must include columns: Patient-ID, Report-ID, Text")
-                self.data = list(reader)
+                required_columns = {"Patient-ID", "Report-ID", "Report-Date", "Text"}
+                if not required_columns.issubset(reader.fieldnames):
+                    raise ValueError(f"CSV must include columns: {', '.join(required_columns)}")
+                
+                self.data = []
+                for row in reader:
+                    try:
+                        # Convert date string to datetime object for sorting
+                        row["_parsed_date"] = dateparser.parse(row["Report-Date"])
+                    except ValueError:
+                        row["_parsed_date"] = datetime.datetime.min
+                    self.data.append(row)
+                
+                # Sort all data by patient then date
+                self.data.sort(key=lambda x: (x["Patient-ID"], x["_parsed_date"]))
         except Exception as e:
             raise ValueError(f"Invalid CSV: {str(e)}")
     
@@ -573,20 +608,36 @@ class AnnotationApp(QMainWindow):
         add_controls(self.annotation_layout, self.task_config["groups"])
 
     def update_ui(self):
-        """Update text display and progress."""
+        """Update text display to show single or grouped reports."""
         if not self.data:
             return
         
-        entry = self.data[self.current_index]
-        # Preserve whitespace and formatting
-        self.text_display.setPlainText(
-            f"=== Report {entry['Report-ID']} for Patient {entry['Patient-ID']} ===\n\n"
-            f"{entry['Text']}"
-        )
+        current_entry = self.data[self.current_index]
+        patient_id = current_entry["Patient-ID"]
 
-        # Load existing annotations if present
-        self.load_annotations_for_report(entry["Report-ID"])
-        self.load_annotation_values()
+        if self.group_patient_reports:
+            # Get all reports for current patient
+            patient_reports = [r for r in self.data if r["Patient-ID"] == patient_id]
+            report_texts = []
+            
+            for report in patient_reports:
+                report_texts.append(
+                    f"=== Report {report['Report-ID']} ({report['Report-Date']}) ===\n\n"
+                    f"{report['Text']}\n\n"
+                )
+            
+            self.text_display.setPlainText("\n".join(report_texts))
+            self.current_patient_reports = patient_reports
+        else:
+            # Single report mode
+            self.text_display.setPlainText(
+                f"=== Report {current_entry['Report-ID']} ({current_entry['Report-Date']}) ===\n\n"
+                f"{current_entry['Text']}"
+            )
+            self.current_patient_reports = [current_entry]
+        
+        # Load annotations for current view
+        self.load_annotations_for_current_view()
 
     def load_annotations(self):
         """Load existing annotations for a report into the UI."""
@@ -607,20 +658,52 @@ class AnnotationApp(QMainWindow):
 
     def load_annotation_values(self):
         """Load annotation values into UI controls."""
-        for label, control in self.controls.items():
-            if label in self.current_report_annotations:
-                value = self.current_report_annotations[label]
-                if isinstance(control, QSlider):
-                    control.setValue(value)
-                elif isinstance(control, QButtonGroup):
-                    for button in control.buttons():
-                        if button.text() == value:
-                            button.setChecked(True)
-                            break
-                elif isinstance(control, QCheckBox):
-                    control.setChecked(value)
-                elif isinstance(control, (QLineEdit, QComboBox)):
-                    control.setCurrentText(value) if isinstance(control, QComboBox) else control.setText(value)
+        if not self.current_patient_reports:
+            return
+        
+        # For single report mode
+        if not self.group_patient_reports:
+            report_id = self.current_patient_reports[0]["Report-ID"]
+            annotations = self.current_report_annotations.get(report_id, {})
+            
+            for label, control in self.controls.items():
+                if label in annotations:
+                    value = annotations[label]
+                    if isinstance(control, QSlider):
+                        control.setValue(value)
+                    elif isinstance(control, QButtonGroup):
+                        for button in control.buttons():
+                            if button.text() == value:
+                                button.setChecked(True)
+                                break
+                    elif isinstance(control, QCheckBox):
+                        control.setChecked(value)
+                    elif isinstance(control, QLineEdit):
+                        control.setText(str(value))
+                    elif isinstance(control, QComboBox):
+                        control.setCurrentText(str(value))
+        
+        # For group mode
+        else:
+            first_report_id = self.current_patient_reports[0]["Report-ID"]
+            annotations = self.current_report_annotations.get(first_report_id, {})
+            
+            for label, control in self.controls.items():
+                if label in annotations:
+                    value = annotations[label]
+                    if isinstance(control, QSlider):
+                        control.setValue(value)
+                    elif isinstance(control, QButtonGroup):
+                        for button in control.buttons():
+                            if button.text() == value:
+                                button.setChecked(True)
+                                break
+                    elif isinstance(control, QCheckBox):
+                        control.setChecked(value)
+                    elif isinstance(control, QLineEdit):
+                        control.setText(str(value))
+                    elif isinstance(control, QComboBox):
+                        control.setCurrentText(str(value))
 
     def save_and_next(self):
         """Save current annotations and move to next unannotated entry."""
@@ -650,34 +733,73 @@ class AnnotationApp(QMainWindow):
                 if cb.isChecked():
                     self.suppress_save_warnings = True
                     self.save_settings()
-
     
+    def next_entry(self, skip_annotated=False):
+        """Move to next report or patient group."""
+        if len(self.data) == 0:
+            return
+            
+        if self.group_patient_reports:
+            # Find next unannotated patient group
+            current_patient = self.data[self.current_index]["Patient-ID"]
+            for i in range(self.current_index + 1, len(self.data)):
+                if self.data[i]["Patient-ID"] != current_patient:
+                    # Check if we should skip fully annotated patients
+                    if skip_annotated:
+                        patient_reports = [r for r in self.data if r["Patient-ID"] == self.data[i]["Patient-ID"]]
+                        all_annotated = all(
+                            any(a["report_id"] == r["Report-ID"] for a in self.all_annotations 
+                                if a["annotator"] == self.current_annotator_name)
+                            for r in patient_reports
+                        )
+                        if all_annotated:
+                            continue
+                    
+                    self.current_index = i
+                    self.clear_controls()
+                    self.update_ui()
+                    return
+        else:
+            # Original single report behavior
+            start_index = self.current_index
+            while True:
+                if self.current_index >= len(self.data) - 1:
+                    QMessageBox.information(self, "Complete", "All reports have been annotated!")
+                    break
+                    
+                self.current_index += 1
+                if not skip_annotated or not any(
+                    a["report_id"] == self.data[self.current_index]["Report-ID"] 
+                    for a in self.all_annotations 
+                    if a["annotator"] == self.current_annotator_name
+                ):
+                    self.clear_controls()
+                    self.update_ui()
+                    break
+                    
+                # Prevent infinite loop
+                if self.current_index == start_index:
+                    break
+
     def prev_entry(self):
-        """Move to previous entry and load its annotations if they exist."""
+        """Move to previous report or patient group."""
         if self.current_index <= 0:
             return
             
-        self.current_index -= 1
-        self.clear_controls()
-        self.update_ui()
-
-    def next_entry(self, skip_annotated=False):
-        """Move to next entry, optionally skipping annotated ones."""
-        start_index = self.current_index
-        while True:
-            if self.current_index >= len(self.data) - 1:
-                QMessageBox.information(self, "Complete", "All reports have been annotated!")
-                break
-                
-            self.current_index += 1
-            if not skip_annotated or self.data[self.current_index]["Report-ID"] not in self.annotations:
-                self.clear_controls()
-                self.update_ui()
-                break
-                
-            # Prevent infinite loop if all remaining are annotated
-            if self.current_index == start_index:
-                break
+        if self.group_patient_reports:
+            # Find previous patient group
+            current_patient = self.data[self.current_index]["Patient-ID"]
+            for i in range(self.current_index - 1, -1, -1):
+                if self.data[i]["Patient-ID"] != current_patient:
+                    self.current_index = i
+                    self.clear_controls()
+                    self.update_ui()
+                    return
+        else:
+            # Original single report behavior
+            self.current_index -= 1
+            self.clear_controls()
+            self.update_ui()
     
     def validate_annotations(self):
         """Check if all required fields are filled"""
@@ -700,21 +822,54 @@ class AnnotationApp(QMainWindow):
         return True
         
     def collect_annotation_data(self):
-        """Gather all control values"""
-        data = {}
-        for label, control in self.controls.items():
-            if isinstance(control, QSlider):
-                data[label] = control.value()
-            elif isinstance(control, QButtonGroup):
-                checked = control.checkedButton()
-                data[label] = checked.text() if checked else None
-            elif isinstance(control, QCheckBox):
-                data[label] = control.isChecked()
-            elif isinstance(control, QLineEdit):  # Text field
-                data[label] = control.text()
-            elif isinstance(control, QComboBox):  # Dropdown
-                data[label] = control.currentText()
-        return data
+        """Gather all control values for current reports."""
+        collected_data = {}
+        
+        if not self.group_patient_reports:
+            # Single report mode - same as before
+            report_id = self.current_patient_reports[0]["Report-ID"]
+            report_data = {}
+            for label, control in self.controls.items():
+                if isinstance(control, QSlider):
+                    report_data[label] = control.value()
+                elif isinstance(control, QButtonGroup):
+                    checked = control.checkedButton()
+                    report_data[label] = checked.text() if checked else None
+                elif isinstance(control, QCheckBox):
+                    report_data[label] = control.isChecked()
+                elif isinstance(control, QLineEdit):
+                    report_data[label] = control.text()
+                elif isinstance(control, QComboBox):
+                    report_data[label] = control.currentText()
+            collected_data[report_id] = report_data
+        else:
+            # Group mode - collect current control values
+            current_annotations = {}
+            for label, control in self.controls.items():
+                if isinstance(control, QSlider):
+                    current_annotations[label] = control.value()
+                elif isinstance(control, QButtonGroup):
+                    checked = control.checkedButton()
+                    current_annotations[label] = checked.text() if checked else None
+                elif isinstance(control, QCheckBox):
+                    current_annotations[label] = control.isChecked()
+                elif isinstance(control, QLineEdit):
+                    current_annotations[label] = control.text()
+                elif isinstance(control, QComboBox):
+                    current_annotations[label] = control.currentText()
+            
+            # Create combined report ID string for display
+            report_ids = [r["Report-ID"] for r in self.current_patient_reports]
+            combined_id = " - ".join(report_ids)
+            
+            # Store same annotations for all reports but mark them as grouped
+            for report in self.current_patient_reports:
+                collected_data[report["Report-ID"]] = {
+                    **current_annotations,
+                    "_grouped_reports": combined_id  # Add this special field
+                }
+        
+        return collected_data
 
     def clear_controls(self):
         """Reset all input controls to default values"""
@@ -754,31 +909,41 @@ class AnnotationApp(QMainWindow):
         return list(search_items(self.task_config["groups"]))
 
     def save_annotations(self):
-        """Save current annotations with validation."""
+        """Save annotations for current view."""
         try:
-            # Update current annotation if it exists
-            entry = self.data[self.current_index]
-            report_id = entry["Report-ID"]
-            patient_id = entry["Patient-ID"]
+            new_annotations = self.collect_annotation_data()
+            report_ids = list(new_annotations.keys())
             
-            # Create a copy of existing annotations excluding current report+annotator
+            # Remove existing annotations for these reports
             updated_annotations = [
                 a for a in self.all_annotations
-                if not (a["report_id"] == report_id and 
+                if not (a["report_id"] in report_ids and 
                     a["annotator"] == self.current_annotator_name)
             ]
             
-            # Add current annotation if we have data
-            if self.current_report_annotations:
-                updated_annotations.append({
-                    "annotator": self.current_annotator_name,
-                    "patient_id": patient_id,
-                    "report_id": report_id,
-                    "timestamp": datetime.datetime.now().isoformat(),
-                    "annotation": self.current_report_annotations
-                })
+            # Add new annotations
+            for report_id, annotation_data in new_annotations.items():
+                if annotation_data:
+                    report = next((r for r in self.data if r["Report-ID"] == report_id), None)
+                    if report:
+                        # Create the annotation object
+                        annotation_obj = {
+                            "annotator": self.current_annotator_name,
+                            "patient_id": report["Patient-ID"],
+                            "report_id": report_id,
+                            "timestamp": datetime.datetime.now().isoformat(),
+                            "annotation": annotation_data
+                        }
+                        
+                        # If in group mode, add the combined ID to the main object
+                        if self.group_patient_reports:
+                            annotation_obj["combined_report_ids"] = annotation_data.get("_grouped_reports", "")
+                            # Remove the internal field from the annotation data
+                            if "_grouped_reports" in annotation_obj["annotation"]:
+                                del annotation_obj["annotation"]["_grouped_reports"]
+                        
+                        updated_annotations.append(annotation_obj)
             
-            # Update our in-memory store
             self.all_annotations = updated_annotations
             
             with open(self.output_path, 'w') as f:
@@ -805,6 +970,32 @@ class AnnotationApp(QMainWindow):
                     self.save_settings()
             return False
         
+    def load_annotations_for_current_view(self):
+        """Load annotations for all reports in current view."""
+        self.current_report_annotations = {}
+        
+        if not self.current_annotator_name:
+            return
+            
+        for report in self.current_patient_reports:
+            report_id = report["Report-ID"]
+            
+            # Find most recent annotation for this report+annotator
+            matching_annotations = [
+                a for a in self.all_annotations 
+                if a["report_id"] == report_id and 
+                a["annotator"] == self.current_annotator_name
+            ]
+            
+            if matching_annotations:
+                self.current_report_annotations[report_id] = matching_annotations[-1]["annotation"]
+            else:
+                # Initialize empty annotation
+                self.current_report_annotations[report_id] = {}
+        
+        # Load values into UI controls
+        self.load_annotation_values()
+
     def load_annotations_for_report(self, report_id):
         """Load existing annotations for current report and annotator."""
         self.current_report_annotations = {}

@@ -8,6 +8,7 @@ A lightweight, PyQt5-based GUI for annotating medical reports using structured t
 - Automatically generate an annotation interface from a YAML task definition
 - Save validated annotations to a structured JSON file
 - Multi-user annotation support with individual tracking
+- Multi-report annotation support
 
 ## ⚡ Quick Start
 
@@ -50,8 +51,8 @@ python app.py --csv reports.csv --yaml task.yaml --output annotations.json
 The CSV file should include the following columns:
 
 ```csv
-Patient-ID,Report-ID,Text
-P001,R001,"Patient report text..."
+Patient-ID,Report-ID,Report-Date,Text
+P001,R001,"01-01-2025","Patient report text..."
 ```
 
 Each row corresponds to a report that will be annotated.
