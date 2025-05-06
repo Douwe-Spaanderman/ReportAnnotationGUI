@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
     QSlider, QRadioButton, QCheckBox, QButtonGroup, QMessageBox,
     QLineEdit, QComboBox, QSplitter, QFileDialog, QDialog, 
     QAction, QDesktopWidget, QCompleter, QScrollArea,
-    QSizePolicy, QFrame, QDateEdit
+    QSizePolicy, QFrame, QDateEdit, QGridLayout
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QFont, QPixmap
@@ -56,6 +56,35 @@ class SettingsDialog(QDialog):
         csv_layout = QHBoxLayout()
         csv_layout.addWidget(self.csv_path_edit)
         csv_layout.addWidget(self.csv_browse_button)
+
+        ## CSV header configuration
+        self.header_label = QLabel("Columns:")
+        header_layout = QGridLayout()
+        header_layout.setColumnStretch(1, 1)
+        
+        self.patient_id_label = QLabel("Patient Unique Identifiers:")
+        self.patient_id_field = QLineEdit()
+        self.patient_id_field.setText("Patient-ID")
+        header_layout.addWidget(self.patient_id_label, 0, 0)
+        header_layout.addWidget(self.patient_id_field, 0, 1)
+        
+        self.report_id_label = QLabel("Report Unique Identifiers:")
+        self.report_id_field = QLineEdit()
+        self.report_id_field.setText("Report-ID")
+        header_layout.addWidget(self.report_id_label, 1, 0)
+        header_layout.addWidget(self.report_id_field, 1, 1)
+        
+        self.report_date_label = QLabel("Report Dates:")
+        self.report_date_field = QLineEdit()
+        self.report_date_field.setText("Report-Date")
+        header_layout.addWidget(self.report_date_label, 2, 0)
+        header_layout.addWidget(self.report_date_field, 2, 1)
+        
+        self.text_label = QLabel("Report Free Text:")
+        self.text_field = QLineEdit()
+        self.text_field.setText("Text")
+        header_layout.addWidget(self.text_label, 3, 0)
+        header_layout.addWidget(self.text_field, 3, 1)
         
         # YAML file selection
         self.yaml_label = QLabel("YAML Task File:")
@@ -72,7 +101,7 @@ class SettingsDialog(QDialog):
         output_layout = QHBoxLayout()
         output_layout.addWidget(self.output_path_edit)
         output_layout.addWidget(self.output_browse_button)
-        
+
         # Buttons
         self.ok_button = QPushButton("OK")
         self.cancel_button = QPushButton("Cancel")
@@ -83,6 +112,8 @@ class SettingsDialog(QDialog):
         # Add widgets to main layout
         layout.addWidget(self.csv_label)
         layout.addLayout(csv_layout)
+        layout.addWidget(self.header_label)
+        layout.addLayout(header_layout)
         layout.addWidget(self.yaml_label)
         layout.addLayout(yaml_layout)
         layout.addWidget(self.output_label)
@@ -109,7 +140,13 @@ class SettingsDialog(QDialog):
             'group_patient_reports': self.group_reports_check.isChecked(),
             'csv': self.csv_path_edit.text(),
             'yaml': self.yaml_path_edit.text(),
-            'output': output_path
+            'output': output_path,
+            'headers': {
+                'patient_id': self.patient_id_field.text().strip(),
+                'report_id': self.report_id_field.text().strip(),
+                'report_date': self.report_date_field.text().strip(),
+                'text': self.text_field.text().strip()
+            }
         }
     
     def set_settings(self, settings):
@@ -119,6 +156,13 @@ class SettingsDialog(QDialog):
         self.csv_path_edit.setText(settings.get('csv', ''))
         self.yaml_path_edit.setText(settings.get('yaml', ''))
         self.output_path_edit.setText(settings.get('output', ''))
+        
+        # Set header fields
+        headers = settings.get('headers', {})
+        self.patient_id_field.setText(headers.get('patient_id', 'Patient-ID'))
+        self.report_id_field.setText(headers.get('report_id', 'Report-ID'))
+        self.report_date_field.setText(headers.get('report_date', 'Report-Date'))
+        self.text_field.setText(headers.get('text', 'Text'))
     
     def browse_file(self, line_edit, file_filter, save=False):
         if save:
@@ -180,6 +224,17 @@ class AnnotationApp(QMainWindow):
         self.current_annotator_name = "Unnamed"
         self.all_annotations = []  # Stores all annotations in flat list
         self.current_report_annotations = {}  # Current annotator's annotations for the report
+
+        # Initialize settings with defaults
+        self.settings = {
+            'headers': {
+                'patient_id': 'Patient-ID',
+                'report_id': 'Report-ID',
+                'report_date': 'Report-Date',
+                'text': 'Text'
+            },
+            'suppress_save_warnings': False
+        }
         
         # Initialize paths
         self.csv_path = csv_path or ""
@@ -338,7 +393,13 @@ class AnnotationApp(QMainWindow):
                 'group_patient_reports': self.group_patient_reports,
                 'csv': self.csv_path,
                 'yaml': self.yaml_path,
-                'output': self.output_path
+                'output': self.output_path,
+                'headers': self.settings.get('headers', {
+                    'patient_id': 'Patient-ID',
+                    'report_id': 'Report-ID',
+                    'report_date': 'Report-Date',
+                    'text': 'Text'
+                })
             })
         
         if dialog.exec_() == QDialog.Accepted:
@@ -353,12 +414,18 @@ class AnnotationApp(QMainWindow):
             if self.current_report_annotations:
                 self.save_annotations()
                 
-            # Update paths and annotator
+            # Update paths and settings
             self.csv_path = settings['csv']
             self.yaml_path = settings['yaml']
             self.output_path = settings['output']
             self.current_annotator_name = settings['annotator_name']
-            self.group_patient_reports = settings['group_patient_reports'] 
+            self.group_patient_reports = settings['group_patient_reports']
+            
+            # Update headers in settings
+            self.settings['headers'] = settings['headers']
+            
+            # Save the settings to disk
+            self.save_settings()
             
             # Reload data with new settings
             try:
@@ -373,6 +440,11 @@ class AnnotationApp(QMainWindow):
     def initialize_application(self):
         """Initialize the application with the selected files"""
         try:
+            # Load settings first
+            settings = self.load_settings()
+            if settings:
+                self.settings.update(settings)
+            
             self.task_config = self.load_task_config(self.yaml_path)
             self.instructions.setPlainText(self.task_config.get("instructions", "No instructions provided."))
             self.annotation_title.setText(f'<b>{self.task_config.get("name", "Annotations")}<b>')
@@ -402,25 +474,33 @@ class AnnotationApp(QMainWindow):
 
     def load_settings(self):
         """Load user preferences from a settings file"""
+        if not self.output_path:
+            return None
+            
         settings_file = os.path.join(os.path.dirname(self.output_path), 'annotator_settings.json')
         if os.path.exists(settings_file):
             try:
                 with open(settings_file, 'r') as f:
-                    settings = json.load(f)
-                    self.suppress_save_warnings = settings.get('suppress_save_warnings', False)
-            except:
-                pass  # If loading fails, use defaults
-
+                    return json.load(f)
+            except Exception as e:
+                print(f"Failed to load settings: {str(e)}")
+                return None
+        return None
+    
     def save_settings(self):
         """Save user preferences to a settings file"""
+        if not self.output_path:
+            return
+            
         settings_file = os.path.join(os.path.dirname(self.output_path), 'annotator_settings.json')
         try:
             with open(settings_file, 'w') as f:
                 json.dump({
-                    'suppress_save_warnings': self.suppress_save_warnings
-                }, f)
-        except:
-            pass  # If saving fails, continue silently
+                    'suppress_save_warnings': self.suppress_save_warnings,
+                    'headers': self.settings['headers']
+                }, f, indent=2)
+        except Exception as e:
+            print(f"Failed to save settings: {str(e)}")
 
     def find_first_unannotated(self):
         """Find the first unannotated entry for current annotator."""
@@ -500,18 +580,48 @@ class AnnotationApp(QMainWindow):
         try:
             with open(csv_path, mode="r", encoding="utf-8-sig") as f:
                 reader = csv.DictReader(f)
-                required_columns = {"Patient-ID", "Report-ID", "Report-Date", "Text"}
+                
+                # Get header names from settings
+                headers = self.settings.get('headers', {
+                    'patient_id': 'Patient-ID',
+                    'report_id': 'Report-ID',
+                    'report_date': 'Report-Date',
+                    'text': 'Text'
+                })
+                
+                # Verify required columns exist
+                required_columns = {
+                    headers['patient_id'],
+                    headers['report_id'],
+                    headers['report_date'],
+                    headers['text']
+                }
+                
                 if not required_columns.issubset(reader.fieldnames):
-                    raise ValueError(f"CSV must include columns: {', '.join(required_columns)}")
+                    raise ValueError(
+                        f"CSV must include columns matching: {', '.join(required_columns)}. "
+                        f"Found columns: {', '.join(reader.fieldnames)}"
+                    )
                 
                 self.data = []
                 for row in reader:
                     try:
+                        # Store the original row data
+                        processed_row = dict(row)
+                        
+                        # Add standard field names to the row for internal use
+                        processed_row["Patient-ID"] = row[headers['patient_id']]
+                        processed_row["Report-ID"] = row[headers['report_id']]
+                        processed_row["Report-Date"] = row[headers['report_date']]
+                        processed_row["Text"] = row[headers['text']]
+                        
                         # Convert date string to datetime object for sorting
-                        row["_parsed_date"] = dateparser.parse(row["Report-Date"])
+                        processed_row["_parsed_date"] = dateparser.parse(processed_row["Report-Date"])
+                        
+                        self.data.append(processed_row)
                     except ValueError:
-                        row["_parsed_date"] = datetime.datetime.min
-                    self.data.append(row)
+                        processed_row["_parsed_date"] = datetime.datetime.min
+                        self.data.append(processed_row)
                 
                 # Sort all data by patient then date
                 self.data.sort(key=lambda x: (x["Patient-ID"], x["_parsed_date"]))
