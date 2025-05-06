@@ -12,9 +12,9 @@ from PyQt5.QtWidgets import (
     QSlider, QRadioButton, QCheckBox, QButtonGroup, QMessageBox,
     QLineEdit, QComboBox, QSplitter, QFileDialog, QDialog, 
     QAction, QDesktopWidget, QCompleter, QScrollArea,
-    QSizePolicy, QFrame
+    QSizePolicy, QFrame, QDateEdit
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QFont, QPixmap
 
 class QHLine(QFrame):
@@ -581,6 +581,16 @@ class AnnotationApp(QMainWindow):
                         if item.get("required", False):
                             self.required_controls.append(text_field)
                     
+                    elif item["type"] == "date":
+                        date_field = QDateEdit()
+                        date_field.setDisplayFormat("dd-MM-yyyy")
+                        date_field.setCalendarPopup(True)
+                        date_field.setDate(QDate(2000, 1, 1))
+                        parent_layout.addWidget(date_field)
+                        self.controls[label] = date_field
+                        if item.get("required", False):
+                            self.required_controls.append(date_field)
+
                     elif item["type"] == "dropdown":
                         combo = QComboBox()
                         combo.addItems(item["options"])
@@ -685,6 +695,8 @@ class AnnotationApp(QMainWindow):
                         control.setChecked(value)
                     elif isinstance(control, QLineEdit):
                         control.setText(str(value))
+                    elif isinstance(control, QDateEdit):
+                        control.setDate(QDate.fromString(value, "dd-MM-yyyy") if value else QDate(2000, 1, 1))
                     elif isinstance(control, QComboBox):
                         control.setCurrentText(str(value))
         
@@ -707,6 +719,8 @@ class AnnotationApp(QMainWindow):
                         control.setChecked(value)
                     elif isinstance(control, QLineEdit):
                         control.setText(str(value))
+                    elif isinstance(control, QDateEdit):
+                        control.setDate(QDate.fromString(value, "dd-MM-yyyy"))
                     elif isinstance(control, QComboBox):
                         control.setCurrentText(str(value))
 
@@ -821,6 +835,9 @@ class AnnotationApp(QMainWindow):
             elif isinstance(control, QLineEdit):  # Text field validation
                 if not control.text().strip():
                     return False
+            elif isinstance(control, QDateEdit):  # Date field validation
+                if not control.date().isValid():
+                    return False
             elif isinstance(control, QComboBox):  # Dropdown validation
                 if not control.currentText():
                     return False
@@ -844,6 +861,8 @@ class AnnotationApp(QMainWindow):
                     report_data[label] = control.isChecked()
                 elif isinstance(control, QLineEdit):
                     report_data[label] = control.text()
+                elif isinstance(control, QDateEdit):
+                    report_data[label] = control.date().toString("dd-MM-yyyy") if not control.date().toString("dd-MM-yyyy") == "01-01-2000" else None
                 elif isinstance(control, QComboBox):
                     report_data[label] = control.currentText()
             collected_data[report_id] = report_data
@@ -860,6 +879,8 @@ class AnnotationApp(QMainWindow):
                     current_annotations[label] = control.isChecked()
                 elif isinstance(control, QLineEdit):
                     current_annotations[label] = control.text()
+                elif isinstance(control, QDateEdit):
+                    current_annotations[label] = control.date().toString("dd-MM-yyyy") if not control.date().toString("dd-MM-yyyy") == "01-01-2000" else None
                 elif isinstance(control, QComboBox):
                     current_annotations[label] = control.currentText()
             
@@ -892,6 +913,8 @@ class AnnotationApp(QMainWindow):
                 # Reset to default if specified in YAML, else empty
                 default = next((item.get("default", "") for item in self.find_control_config(label) if "default" in item), "")
                 control.setText(default)
+            elif isinstance(control, QDateEdit):  # Date field
+                control.setDate(QDate(2000, 1, 1))# Reset to 01-01-2000
             elif isinstance(control, QComboBox):  # Dropdown
                 # Reset to default if specified in YAML, else first item
                 config = next((item for item in self.find_control_config(label)), {})
