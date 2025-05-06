@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
     QSlider, QRadioButton, QCheckBox, QButtonGroup, QMessageBox,
     QLineEdit, QComboBox, QSplitter, QFileDialog, QDialog, 
     QAction, QDesktopWidget, QCompleter, QScrollArea,
-    QSizePolicy, QFrame, QDateEdit, QGridLayout
+    QSizePolicy, QFrame, QDateEdit, QGridLayout, QToolButton
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QFont, QPixmap
@@ -640,98 +640,154 @@ class AnnotationApp(QMainWindow):
             if widget is not None:
                 widget.setParent(None)
 
-        def add_controls(parent_layout, items):
-            for item in items:
-                if "controls" in item:  # Group
+        self.add_controls(self.annotation_layout, self.task_config["groups"])
+
+    def add_controls(self, parent_layout, items):
+        for item in items:
+            if "controls" in item:  # Group
+                if item.get("collapsible", False):
+                    # Create collapsible group
+                    group = self.create_collapsible_group(item)
+                    parent_layout.addWidget(group)
+                else:
+                    # Regular group
                     group = QGroupBox(item["label"])
                     sub_layout = QVBoxLayout()
-                    add_controls(sub_layout, item["controls"])
+                    self.add_controls(sub_layout, item["controls"])
                     group.setLayout(sub_layout)
                     parent_layout.addWidget(group)
-                elif "groups" in item:  # Nested Group
-                    add_controls(parent_layout, item["groups"])
-                else:  # Control
-                    label = item["label"]
-                    parent_layout.addWidget(QLabel(label))
-                    
-                    if item["type"] == "slider":
-                        slider = QSlider(Qt.Horizontal)
-                        slider.setRange(item["min"], item["max"])
-                        slider.setValue(item["min"])  # Set default to min
-                        parent_layout.addWidget(slider)
-                        self.controls[label] = slider
-                        if item.get("required", False):
-                            self.required_controls.append(slider)
-                            
-                    elif item["type"] == "radio":
-                        group = QButtonGroup()
-                        self.button_groups[label] = group
-                        for option in item["options"]:
-                            radio = QRadioButton(option)
-                            parent_layout.addWidget(radio)
-                            group.addButton(radio)
-                        self.controls[label] = group
-                        if item.get("required", False):
-                            self.required_controls.append(group)
-                            
-                    elif item["type"] == "checkbox":
-                        checkbox = QCheckBox(label)
-                        parent_layout.addWidget(checkbox)
-                        self.controls[label] = checkbox
-                        if item.get("required", False):
-                            self.required_controls.append(checkbox)
-                    
-                    elif item["type"] == "text":
-                        text_field = QLineEdit()
-                        text_field.setPlaceholderText(item.get("placeholder", ""))
-                        if "default" in item:
-                            text_field.setText(item["default"])
-                        parent_layout.addWidget(text_field)
-                        self.controls[label] = text_field
-                        if item.get("required", False):
-                            self.required_controls.append(text_field)
-                    
-                    elif item["type"] == "date":
-                        date_field = QDateEdit()
-                        date_field.setDisplayFormat("dd-MM-yyyy")
-                        date_field.setCalendarPopup(True)
-                        date_field.setDate(QDate(2000, 1, 1))
-                        parent_layout.addWidget(date_field)
-                        self.controls[label] = date_field
-                        if item.get("required", False):
-                            self.required_controls.append(date_field)
-
-                    elif item["type"] == "dropdown":
-                        combo = QComboBox()
-                        combo.addItems(item["options"])
-                        if "default" in item and item["default"] in item["options"]:
-                            combo.setCurrentText(item["default"])
-                        parent_layout.addWidget(combo)
-                        self.controls[label] = combo
-                        if item.get("required", False):
-                            self.required_controls.append(combo)
-
-                    elif item["type"] == "autocomplete":
-                        text_field = QLineEdit()
-                        text_field.setPlaceholderText(item.get("placeholder", "Start typing..."))
+            elif "groups" in item:  # Nested Group
+                self.add_controls(parent_layout, item["groups"])
+            else:  # Control
+                label = item["label"]
+                parent_layout.addWidget(QLabel(label))
+                
+                if item["type"] == "slider":
+                    slider = QSlider(Qt.Horizontal)
+                    slider.setRange(item["min"], item["max"])
+                    slider.setValue(item["min"])  # Set default to min
+                    parent_layout.addWidget(slider)
+                    self.controls[label] = slider
+                    if item.get("required", False):
+                        self.required_controls.append(slider)
                         
-                        # Create completer with options
-                        completer = QCompleter(item["options"])
-                        completer.setCaseSensitivity(Qt.CaseInsensitive)
-                        completer.setFilterMode(Qt.MatchContains)  # Match anywhere in string
-                        completer.setCompletionMode(QCompleter.PopupCompletion)
-                        text_field.setCompleter(completer)
+                elif item["type"] == "radio":
+                    group = QButtonGroup()
+                    self.button_groups[label] = group
+                    for option in item["options"]:
+                        radio = QRadioButton(option)
+                        parent_layout.addWidget(radio)
+                        group.addButton(radio)
+                    self.controls[label] = group
+                    if item.get("required", False):
+                        self.required_controls.append(group)
                         
-                        if "default" in item:
-                            text_field.setText(item["default"])
-                        
-                        parent_layout.addWidget(text_field)
-                        self.controls[label] = text_field
-                        if item.get("required", False):
-                            self.required_controls.append(text_field)
+                elif item["type"] == "checkbox":
+                    checkbox = QCheckBox(label)
+                    parent_layout.addWidget(checkbox)
+                    self.controls[label] = checkbox
+                    if item.get("required", False):
+                        self.required_controls.append(checkbox)
+                
+                elif item["type"] == "text":
+                    text_field = QLineEdit()
+                    text_field.setPlaceholderText(item.get("placeholder", ""))
+                    if "default" in item:
+                        text_field.setText(item["default"])
+                    parent_layout.addWidget(text_field)
+                    self.controls[label] = text_field
+                    if item.get("required", False):
+                        self.required_controls.append(text_field)
+                
+                elif item["type"] == "date":
+                    date_field = QDateEdit()
+                    date_field.setDisplayFormat("dd-MM-yyyy")
+                    date_field.setCalendarPopup(True)
+                    date_field.setDate(QDate(2000, 1, 1))
+                    parent_layout.addWidget(date_field)
+                    self.controls[label] = date_field
+                    if item.get("required", False):
+                        self.required_controls.append(date_field)
 
-        add_controls(self.annotation_layout, self.task_config["groups"])
+                elif item["type"] == "dropdown":
+                    combo = QComboBox()
+                    combo.addItems(item["options"])
+                    if "default" in item and item["default"] in item["options"]:
+                        combo.setCurrentText(item["default"])
+                    parent_layout.addWidget(combo)
+                    self.controls[label] = combo
+                    if item.get("required", False):
+                        self.required_controls.append(combo)
 
+                elif item["type"] == "autocomplete":
+                    text_field = QLineEdit()
+                    text_field.setPlaceholderText(item.get("placeholder", "Start typing..."))
+                    
+                    # Create completer with options
+                    completer = QCompleter(item["options"])
+                    completer.setCaseSensitivity(Qt.CaseInsensitive)
+                    completer.setFilterMode(Qt.MatchContains)  # Match anywhere in string
+                    completer.setCompletionMode(QCompleter.PopupCompletion)
+                    text_field.setCompleter(completer)
+                    
+                    if "default" in item:
+                        text_field.setText(item["default"])
+                    
+                    parent_layout.addWidget(text_field)
+                    self.controls[label] = text_field
+                    if item.get("required", False):
+                        self.required_controls.append(text_field)
+
+    def create_collapsible_group(self, group_config):
+        """Create a collapsible group box with toggle button on the right."""
+        # Create a standard QGroupBox
+        group = QGroupBox()
+        
+        # Main layout for the group
+        main_layout = QVBoxLayout(group)
+        
+        # Header widget (for the title and toggle button)
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Title label
+        title_label = QLabel(f"<b>{group_config['label']}</b>")
+        
+        # Toggle button (styled like a QToolButton)
+        toggle_button = QToolButton()
+        toggle_button.setStyleSheet("QToolButton { border: none; }")
+        toggle_button.setArrowType(Qt.DownArrow if group_config.get("initially_expanded", True) else Qt.RightArrow)
+        toggle_button.setFixedSize(16, 16)
+        
+        # Add widgets to header
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
+        header_layout.addWidget(toggle_button)
+        
+        # Content area
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(5, 5, 5, 5)
+        self.add_controls(content_layout, group_config["controls"])
+        
+        # Add to main layout
+        main_layout.addWidget(header)
+        main_layout.addWidget(content)
+        
+        # Set initial state
+        content.setVisible(group_config.get("initially_expanded", True))
+        
+        # Connect toggle button
+        def toggle_content():
+            is_visible = not content.isVisible()
+            content.setVisible(is_visible)
+            toggle_button.setArrowType(Qt.DownArrow if is_visible else Qt.RightArrow)
+        
+        toggle_button.clicked.connect(toggle_content)
+        
+        return group
+        
     def update_ui(self):
         """Update text display to show single or grouped reports."""
         if not self.data:
@@ -1269,6 +1325,9 @@ class AnnotationApp(QMainWindow):
                 border: 1px solid #ddd;
                 padding: 5px;
                 font-family: Courier New;
+            }
+            QToolButton {
+                border: none;
             }
         """)
 
