@@ -1,0 +1,99 @@
+name: "Pathology Report Annotation"
+instructions: |
+  Extract information from pathology reports. Follow all constraints and use the provided options where specified.
+
+groups:
+  - label: "Specimen Information"
+    controls:
+      - label: "Specimen Type"
+        type: "dropdown"
+        options: ["Biopsy", "Resection", "Cytology", "Not specified"]
+        required: true
+
+      - label: "Pathology Request Reason"
+        type: "dropdown"
+        options: 
+          - "Suspicion of soft tissue tumor"
+          - "Suspicion of other cancer"
+          - "Metastasis"
+          - "Metastasis or soft tissue tumor"
+          - "Metastasis or other cancer"
+          - "Follow-up"
+          - "Recurrent tumor"
+          - "Not specified"
+        required: true
+
+  - label: "Disease Information"
+    controls:
+      - label: "Is it a soft tissue tumor?"
+        type: "radio"
+        options: ["Yes", "No", "Not specified"]
+        required: true
+
+      - label: "Is it suspected or confirmed?"
+        type: "radio"
+        options: ["Suspected", "Confirmed", "Not specified"]
+        required: true
+
+      - label: "Is it benign or malignant?"
+        type: "radio"
+        options: ["Benign", "Malignant", "Not specified"]
+        required: true
+
+      - label: "Disease Type (UMLS short name)"
+        type: "text"
+        placeholder: "Enter UMLS short name"
+        required: true
+
+      - label: "Disease Type specific (detailed subtype)"
+        type: "text"
+        placeholder: "Enter detailed subtype if mentioned"
+
+      - label: "Disease Type differential diagnosis"
+        type: "text"
+        placeholder: "Enter comma-separated list of differential diagnoses"
+
+  - label: "Tumor Characteristics"
+    controls:
+      - label: "Tumor Grade"
+        type: "dropdown"
+        options: ["G1", "G2", "G3", "Low-grade", "High-grade", "No grade", "Not specified"]
+
+      - label: "Tumor Location"
+        type: "text"
+        placeholder: "Enter UMLS short name (e.g., 'Lung', 'Breast')"
+        required: true
+
+      - label: "Presence of mitosis"
+        type: "group"
+        controls:
+          - label: "Present"
+            type: "radio"
+            options: ["Yes", "No", "Not specified"]
+            default: "Not specified"
+          
+          - label: "Approximate number of mitotic figures"
+            type: "text"
+            placeholder: "Enter number if present"
+            default: "Not specified"
+
+      - label: "Presence of necrosis"
+        type: "group"
+        controls:
+          - label: "Present"
+            type: "radio"
+            options: ["Yes", "No", "Not specified"]
+            default: "Not specified"
+          
+          - label: "Extent"
+            type: "text"
+            placeholder: "Describe extent if present"
+            default: "Not specified"
+
+  - label: "Additional Information"
+    controls:
+      - label: "Residual Tumor Classification"
+        type: "dropdown"
+        options: ["R0", "R1", "R2", "Not specified"]
+        default: "Not specified"
+        note: "Only applicable when Specimen Type is 'Resection'"

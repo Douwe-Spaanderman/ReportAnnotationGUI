@@ -1,0 +1,50 @@
+name: "Metastasen en Recidief Annotatie"
+instructions: |
+  1. Lees het patiëntverslag zorgvuldig.
+  2. Annoteer de gevraagde informatie.
+  3. Klik 'Save' na elke annotatie.
+
+groups:
+  - label: "Metastasen"
+    collapsible: true
+    controls:
+      - type: radio
+        label: "Metastasen aanwezig?"
+        options: ["Ja", "Nee"]
+        required: true
+      - type: radio
+        label: "Aantal metastasen"
+        options: ["1", "2-3", ">3"]
+        required: false
+      - type: dropdown
+        label: "Locatie metastasen"
+        options: ["Long", "Abdomen", "Lever", "Anders"]
+        placeholder: "Typ om te zoeken"
+        required: false
+      - type: date
+        label: "Datum eerste metastasen"
+        placeholder: "DD-MM-YYYY"
+        required: false
+      - type: text
+        label: "Grootte metastase(n)"
+        placeholder: "Bijv: 3 cm of multiple"
+        required: false
+      - type: dropdown
+        label: "Type beeldvorming bij metastasen"
+        options: ["X-thorax", "CT-thorax", "CT-thorax-abdomen", "MRI", "Anders"]
+        required: false
+      - type: date
+        label: "Datum laatste beeldvorming"
+        placeholder: "DD-MM-YYYY"
+        required: false
+
+  - label: "Local Recurrence"
+    controls:
+      - type: radio
+        label: "Local recurrence aanwezig?"
+        options: ["Ja", "Nee"]
+        required: true
+      - type: date
+        label: "Datum local recurrence"
+        placeholder: "DD-MM-YYYY"
+        required: false
