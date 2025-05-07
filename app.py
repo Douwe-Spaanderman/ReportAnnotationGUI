@@ -688,7 +688,56 @@ class AnnotationApp(QMainWindow):
                     self.controls[label] = checkbox
                     if item.get("required", False):
                         self.required_controls.append(checkbox)
-                
+
+                elif item["type"] == "text" and item.get("mapper", False):
+                    # Create mapper control layout
+                    mapper_layout = QHBoxLayout()
+                    
+                    # Text field
+                    text_field = QLineEdit()
+                    text_field.setPlaceholderText(item.get("placeholder", ""))
+                    if "default" in item:
+                        text_field.setText(item["default"])
+                    mapper_layout.addWidget(text_field, stretch=2)
+                    
+                    # Update button
+                    update_button = QPushButton("🔍")
+                    update_button.setToolTip("Search UMLS")
+                    update_button.setFixedWidth(30)
+                    mapper_layout.addWidget(update_button)
+                    
+                    # Dropdown for UMLS results
+                    umls_dropdown = QComboBox()
+                    umls_dropdown.setFixedWidth(200)
+                    mapper_layout.addWidget(umls_dropdown, stretch=1)
+                    
+                    # Checkmark button
+                    check_button = QPushButton("✓")
+                    check_button.setToolTip("Confirm selection")
+                    check_button.setFixedWidth(30)
+                    check_button.setEnabled(False)
+                    mapper_layout.addWidget(check_button)
+                    
+                    # Store references
+                    self.controls[label] = {
+                        'text': text_field,
+                        'dropdown': umls_dropdown,
+                        'update': update_button,
+                        'check': check_button
+                    }
+                    
+                    # Connect signals
+                    update_button.clicked.connect(
+                        lambda _, t=text_field, d=umls_dropdown, c=check_button: 
+                        self.search_umls(t.text(), d, c)
+                    )
+                    
+                    check_button.clicked.connect(
+                        lambda _, t=text_field, d=umls_dropdown:
+                        self.confirm_umls_selection(t, d)
+                    )
+                    
+                    parent_layout.addLayout(mapper_layout)
                 elif item["type"] == "text":
                     text_field = QLineEdit()
                     text_field.setPlaceholderText(item.get("placeholder", ""))
@@ -737,6 +786,61 @@ class AnnotationApp(QMainWindow):
                     self.controls[label] = text_field
                     if item.get("required", False):
                         self.required_controls.append(text_field)
+
+    def search_umls(self, text, dropdown, check_button):
+        """Search UMLS for the given text and populate dropdown with results."""
+        try:
+            if not hasattr(self, 'nlp'):
+                # Initialize NLP and linker only once
+                import spacy
+                from scispacy.linking import EntityLinker
+                self.nlp = spacy.load("en_core_sci_sm")
+                self.nlp.add_pipe("scispacy_linker", 
+                                config={"resolve_abbreviations": True, 
+                                        "linker_name": "umls"})
+            
+            # Clear previous results
+            dropdown.clear()
+            check_button.setEnabled(False)
+            
+            if not isinstance(text, str) or not text.strip():
+                return
+            
+            # Create a Doc object from the full string
+            doc = self.nlp(text)
+            
+            # Force a single-span entity over the entire string
+            span = doc.char_span(0, len(text), label="ENTITY")
+            if span is None:
+                return
+            
+            doc.ents = [span]
+            
+            # Run the linker
+            linker = self.nlp.get_pipe("scispacy_linker")
+            doc = linker(doc)
+            
+            ent = doc.ents[0]
+            if not ent._.kb_ents:
+                return
+            
+            # Get top 10 matches
+            for concept_id, score in ent._.kb_ents[:10]:
+                concept = linker.kb.cui_to_entity[concept_id]
+                display_text = f"{concept.canonical_name} ({score:.2f})"
+                dropdown.addItem(display_text, (concept_id, concept.canonical_name, score))
+            
+            if dropdown.count() > 0:
+                check_button.setEnabled(True)
+                
+        except Exception as e:
+            QMessageBox.warning(self, "UMLS Error", f"Failed to search UMLS: {str(e)}")
+
+    def confirm_umls_selection(self, text_field, dropdown):
+        """Handle confirmation of UMLS selection."""
+        if dropdown.currentIndex() >= 0:
+            concept_id, canonical_name, score = dropdown.currentData()
+            text_field.setText(canonical_name)
 
     def create_collapsible_group(self, group_config):
         """Create a collapsible group box with toggle button on the right."""
@@ -1025,6 +1129,11 @@ class AnnotationApp(QMainWindow):
                     report_data[label] = checked.text() if checked else None
                 elif isinstance(control, QCheckBox):
                     report_data[label] = control.isChecked()
+                elif isinstance(control, dict) and 'text' in control:
+                    collected_data[label] = {
+                        'text': control['text'].text(),
+                        'umls_selection': control['dropdown'].currentData() if control['dropdown'].currentIndex() >= 0 else None
+                    }
                 elif isinstance(control, QLineEdit):
                     report_data[label] = control.text()
                 elif isinstance(control, QDateEdit):

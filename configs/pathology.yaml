@@ -43,6 +43,7 @@ groups:
       - label: "Disease Type (UMLS short name)"
         type: "text"
         placeholder: "Enter UMLS short name"
+        mapper: true
         required: true
 
       - label: "Disease Type specific (detailed subtype)"
