@@ -1,4 +1,4 @@
-name: Build PyQt5 App
+name: Build ReportAnnotationGUI App
 
 on:
   push:
@@ -102,7 +102,7 @@ jobs:
           path: dist/ReportAnnotationGUI
 
   create-release:
-    needs: [build-windows, build-macos]
+    needs: [build-windows, build-macos-intel, build-macos-arm]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
