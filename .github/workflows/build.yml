@@ -36,7 +36,7 @@ jobs:
           path: dist/ReportAnnotationGUI.exe
 
   build-macos-intel:
-    runs-on: macos-latest
+    runs-on: macos-13
     name: Build macOS (Intel)
     outputs:
       artifact-name: macOS-intel-build
@@ -89,7 +89,7 @@ jobs:
         run: |
           python -m pip install --upgrade setuptools==44.0.0 pip==25.0.1 wheel==0.45.1
           pip install -r requirements.txt
-          pip install --no-binary :all: nmslib==2.1.1
+          CFLAGS="-mavx -DWARN(a)=(a)" pip install --use-pep517 nmslib
 
       - name: Build with PyInstaller
         run: |
