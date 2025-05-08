@@ -68,41 +68,8 @@ jobs:
           name: macOS-intel-build
           path: dist/ReportAnnotationGUI
 
-  build-macos-arm:
-    runs-on: macos-latest
-    name: Build macOS (ARM)
-    outputs:
-      artifact-name: macOS-arm-build
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.8.10'
-
-      - name: Force ARM architecture
-        run: |
-          echo "Using ARM64 architecture"
-          export ARCHFLAGS="-arch arm64"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade setuptools==44.0.0 pip==25.0.1 wheel==0.45.1
-          pip install -r requirements.txt
-          CFLAGS="-mavx -DWARN(a)=(a)" pip install --use-pep517 nmslib
-
-      - name: Build with PyInstaller
-        run: |
-          pyinstaller app.spec
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: macOS-arm-build
-          path: dist/ReportAnnotationGUI
-
   create-release:
-    needs: [build-windows, build-macos-intel, build-macos-arm]
+    needs: [build-windows, build-macos-intel]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -156,12 +123,4 @@ jobs:
           upload_url: ${{ steps.create-release.outputs.upload_url }}
           asset_path: ./release-assets/macOS-intel-build/ReportAnnotationGUI
           asset_name: ReportAnnotationGUI_macos_intel
-          asset_content_type: application/octet-stream
-
-      - name: Upload macOS ARM binary
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create-release.outputs.upload_url }}
-          asset_path: ./release-assets/macOS-arm-build/ReportAnnotationGUI
-          asset_name: ReportAnnotationGUI_macos_arm
           asset_content_type: application/octet-stream
