@@ -12,7 +12,8 @@ from PyQt5.QtWidgets import (
     QSlider, QRadioButton, QCheckBox, QButtonGroup, QMessageBox,
     QLineEdit, QComboBox, QSplitter, QFileDialog, QDialog, 
     QAction, QDesktopWidget, QCompleter, QScrollArea,
-    QSizePolicy, QFrame, QDateEdit, QGridLayout, QToolButton
+    QSizePolicy, QFrame, QDateEdit, QGridLayout, QToolButton,
+    QProgressDialog
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QFont, QPixmap
@@ -688,7 +689,48 @@ class AnnotationApp(QMainWindow):
                     self.controls[label] = checkbox
                     if item.get("required", False):
                         self.required_controls.append(checkbox)
-                
+
+                elif item["type"] == "text" and item.get("mapper", False):
+                    # Create mapper control layout
+                    mapper_layout = QHBoxLayout()
+                    
+                    # Text field
+                    text_field = QLineEdit()
+                    text_field.setPlaceholderText(item.get("placeholder", ""))
+                    if "default" in item:
+                        text_field.setText(item["default"])
+                    mapper_layout.addWidget(text_field, stretch=2)
+                    
+                    # Update button
+                    update_button = QPushButton("🔍")
+                    update_button.setToolTip("Search UMLS")
+                    update_button.setFixedWidth(30)
+                    mapper_layout.addWidget(update_button)
+                    
+                    # Dropdown for UMLS results
+                    umls_dropdown = QComboBox()
+                    umls_dropdown.setFixedWidth(250)
+                    mapper_layout.addWidget(umls_dropdown, stretch=1)
+                    
+                    # Checkbox for match confirmation
+                    match_checkbox = QCheckBox("Match?")
+                    match_checkbox.setEnabled(False)
+                    mapper_layout.addWidget(match_checkbox)
+                    
+                    # Store references
+                    self.controls[label] = {
+                        'text': text_field,
+                        'dropdown': umls_dropdown,
+                        'update': update_button,
+                        'match_checkbox': match_checkbox
+                    }
+                    
+                    # Connect signals
+                    update_button.clicked.connect(
+                        lambda _, t=text_field, d=umls_dropdown, c=match_checkbox: 
+                        self.search_umls(t.text(), d, c))
+                    
+                    parent_layout.addLayout(mapper_layout)
                 elif item["type"] == "text":
                     text_field = QLineEdit()
                     text_field.setPlaceholderText(item.get("placeholder", ""))
@@ -737,6 +779,91 @@ class AnnotationApp(QMainWindow):
                     self.controls[label] = text_field
                     if item.get("required", False):
                         self.required_controls.append(text_field)
+
+    def search_umls(self, text, dropdown, match_checkbox):
+        """Search UMLS for the given text and populate dropdown with results."""
+        try:
+            if not hasattr(self, 'nlp'):
+                # Initialize NLP and linker only once
+                # Show loading indicator
+                loading_dialog = QProgressDialog("Searching UMLS...", None, 0, 0, self)
+                loading_dialog.setCancelButton(None)
+                loading_dialog.setWindowModality(Qt.WindowModal)
+                loading_dialog.show()
+                QApplication.processEvents()  # Force UI update
+                import spacy
+                from scispacy.linking import EntityLinker
+                loading_dialog.setLabelText("Loading NLP model...")
+                QApplication.processEvents()
+                
+                self.nlp = spacy.load("en_core_sci_sm")
+                
+                loading_dialog.setLabelText("Loading UMLS linker...")
+                QApplication.processEvents()
+                self.nlp.add_pipe("scispacy_linker", 
+                                config={"resolve_abbreviations": True, 
+                                        "linker_name": "umls"})
+            
+            # Clear previous results
+            dropdown.clear()
+            match_checkbox.setEnabled(False)
+            match_checkbox.setChecked(False)
+            
+            if not isinstance(text, str) or not text.strip():
+                dropdown.addItem("No text entered")
+                loading_dialog.close()
+                return
+            
+            loading_dialog.setLabelText(f"Searching for: {text}")
+            QApplication.processEvents()
+            
+            # Create a Doc object from the full string
+            doc = self.nlp(text)
+            
+            # Force a single-span entity over the entire string
+            span = doc.char_span(0, len(text), label="ENTITY")
+            if span is None:
+                dropdown.addItem("No match found")
+                loading_dialog.close()
+                return
+            
+            doc.ents = [span]
+            
+            # Run the linker
+            linker = self.nlp.get_pipe("scispacy_linker")
+            doc = linker(doc)
+            
+            ent = doc.ents[0]
+            if not ent._.kb_ents:
+                dropdown.addItem("No match found")
+                loading_dialog.close()
+                return
+            
+            # Get top 10 matches
+            for concept_id, score in ent._.kb_ents[:10]:
+                concept = linker.kb.cui_to_entity[concept_id]
+                display_text = f"{concept.canonical_name} (Score: {score:.2f}, CUI: {concept_id})"
+                dropdown.addItem(display_text, {
+                    'cui': concept_id,
+                    'canonical_name': concept.canonical_name,
+                    'score': score,
+                    'types': concept.types
+                })
+            
+            if dropdown.count() > 0:
+                match_checkbox.setEnabled(True)
+                
+            loading_dialog.close()
+            
+        except Exception as e:
+            loading_dialog.close()
+            QMessageBox.warning(self, "UMLS Error", f"Failed to search UMLS: {str(e)}")
+
+    def confirm_umls_selection(self, text_field, dropdown):
+        """Handle confirmation of UMLS selection."""
+        if dropdown.currentIndex() >= 0:
+            concept_id, canonical_name, score = dropdown.currentData()
+            text_field.setText(canonical_name)
 
     def create_collapsible_group(self, group_config):
         """Create a collapsible group box with toggle button on the right."""
@@ -859,6 +986,23 @@ class AnnotationApp(QMainWindow):
                                 break
                     elif isinstance(control, QCheckBox):
                         control.setChecked(value)
+                    elif isinstance(control, dict) and 'text' in control:
+                        control['text'].setText(str(value.get("text", "")))
+                        # Handle UMLS dropdown
+                        ulms = value.get("umls_selection", {})
+                        concept_id = ulms.get("cui", "")
+                        canonical_name = ulms.get("canonical_name", "")
+                        score = ulms.get("score", "")
+                        types = ulms.get("types", [])
+
+                        display_text = f"{canonical_name} (Score: {score:.2f}, CUI: {concept_id})"
+                        control['dropdown'].addItem(display_text, {
+                            'cui': concept_id,
+                            'canonical_name': canonical_name,
+                            'score': score,
+                            'types': types
+                        })
+                        control['match_checkbox'].setChecked(value.get("match_checkbox", False))
                     elif isinstance(control, QLineEdit):
                         control.setText(str(value))
                     elif isinstance(control, QDateEdit):
@@ -883,6 +1027,23 @@ class AnnotationApp(QMainWindow):
                                 break
                     elif isinstance(control, QCheckBox):
                         control.setChecked(value)
+                    elif isinstance(control, dict) and 'text' in control:
+                        control['text'].setText(str(value.get("text", "")))
+                        # Handle UMLS dropdown
+                        ulms = value.get("umls_selection", {})
+                        concept_id = ulms.get("cui", "")
+                        canonical_name = ulms.get("canonical_name", "")
+                        score = ulms.get("score", "")
+                        types = ulms.get("types", [])
+
+                        display_text = f"{canonical_name} (Score: {score:.2f}, CUI: {concept_id})"
+                        control['dropdown'].addItem(display_text, {
+                            'cui': concept_id,
+                            'canonical_name': canonical_name,
+                            'score': score,
+                            'types': types
+                        })
+                        control['match_checkbox'].setChecked(value.get("match_checkbox", False))
                     elif isinstance(control, QLineEdit):
                         control.setText(str(value))
                     elif isinstance(control, QDateEdit):
@@ -998,6 +1159,13 @@ class AnnotationApp(QMainWindow):
             elif isinstance(control, QCheckBox):
                 if not control.isChecked():
                     return False
+            elif isinstance(control, dict) and 'text' in control:
+                if not control['text'].text().strip():
+                    return False
+                if not control['dropdown'].currentData():
+                    return False
+                if not control['match_checkbox'].isChecked():
+                    return False
             elif isinstance(control, QLineEdit):  # Text field validation
                 if not control.text().strip():
                     return False
@@ -1025,6 +1193,12 @@ class AnnotationApp(QMainWindow):
                     report_data[label] = checked.text() if checked else None
                 elif isinstance(control, QCheckBox):
                     report_data[label] = control.isChecked()
+                elif isinstance(control, dict) and 'text' in control:
+                    report_data[label] = {
+                        'text': control['text'].text(),
+                        'umls_selection': control['dropdown'].currentData() if control['dropdown'].currentIndex() >= 0 else None,
+                        'match_checkbox': control['match_checkbox'].isChecked()
+                    }
                 elif isinstance(control, QLineEdit):
                     report_data[label] = control.text()
                 elif isinstance(control, QDateEdit):
@@ -1043,6 +1217,12 @@ class AnnotationApp(QMainWindow):
                     current_annotations[label] = checked.text() if checked else None
                 elif isinstance(control, QCheckBox):
                     current_annotations[label] = control.isChecked()
+                elif isinstance(control, dict) and 'text' in control:
+                    current_annotations[label] = {
+                        'text': control['text'].text(),
+                        'umls_selection': control['dropdown'].currentData() if control['dropdown'].currentIndex() >= 0 else None,
+                        'match_checkbox': control['match_checkbox'].isChecked()
+                    }
                 elif isinstance(control, QLineEdit):
                     current_annotations[label] = control.text()
                 elif isinstance(control, QDateEdit):
@@ -1075,6 +1255,12 @@ class AnnotationApp(QMainWindow):
                 control.setExclusive(True)
             elif isinstance(control, QCheckBox):
                 control.setChecked(False)
+            elif isinstance(control, dict) and 'text' in control:
+                # Reset to default if specified in YAML, else empty
+                default = next((item.get("default", "") for item in self.find_control_config(label) if "default" in item), "")
+                control['text'].setText(default)
+                control['dropdown'].clear()
+                control['match_checkbox'].setChecked(False)
             elif isinstance(control, QLineEdit):  # Text field
                 # Reset to default if specified in YAML, else empty
                 default = next((item.get("default", "") for item in self.find_control_config(label) if "default" in item), "")

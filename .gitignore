@@ -176,4 +176,3 @@ cython_debug/
 data/*
 annotations.json
 annotator_settings.json
-scripts/*
