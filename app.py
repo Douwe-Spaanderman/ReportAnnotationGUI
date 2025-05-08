@@ -803,6 +803,7 @@ class AnnotationApp(QMainWindow):
                 self.nlp.add_pipe("scispacy_linker", 
                                 config={"resolve_abbreviations": True, 
                                         "linker_name": "umls"})
+                loading_dialog.close()
             
             # Clear previous results
             dropdown.clear()
@@ -811,10 +812,8 @@ class AnnotationApp(QMainWindow):
             
             if not isinstance(text, str) or not text.strip():
                 dropdown.addItem("No text entered")
-                loading_dialog.close()
                 return
             
-            loading_dialog.setLabelText(f"Searching for: {text}")
             QApplication.processEvents()
             
             # Create a Doc object from the full string
@@ -824,7 +823,6 @@ class AnnotationApp(QMainWindow):
             span = doc.char_span(0, len(text), label="ENTITY")
             if span is None:
                 dropdown.addItem("No match found")
-                loading_dialog.close()
                 return
             
             doc.ents = [span]
@@ -836,7 +834,6 @@ class AnnotationApp(QMainWindow):
             ent = doc.ents[0]
             if not ent._.kb_ents:
                 dropdown.addItem("No match found")
-                loading_dialog.close()
                 return
             
             # Get top 10 matches
@@ -852,11 +849,8 @@ class AnnotationApp(QMainWindow):
             
             if dropdown.count() > 0:
                 match_checkbox.setEnabled(True)
-                
-            loading_dialog.close()
             
         except Exception as e:
-            loading_dialog.close()
             QMessageBox.warning(self, "UMLS Error", f"Failed to search UMLS: {str(e)}")
 
     def confirm_umls_selection(self, text_field, dropdown):
