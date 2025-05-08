@@ -4,9 +4,12 @@ A lightweight, PyQt5-based GUI for annotating medical reports using structured t
 
 ## 🚀 Features
 
-- Load patient reports from a CSV file  
-- Define annotation tasks via a YAML configuration  
-- Save validated annotations to JSON  
+- Load free-text medical reports from a CSV file
+- Automatically generate an annotation interface from a YAML task definition
+- Save validated annotations to a structured JSON file, and export back to CSV
+- Multi-user annotation support with individual tracking
+- Multi-report annotation support
+- Match free-text fields directly to UMLS
 
 ## ⚡ Quick Start
 
@@ -15,6 +18,8 @@ A lightweight, PyQt5-based GUI for annotating medical reports using structured t
 ```bash
 pip install pyqt5 pyyaml
 ```
+
+When using UMLS mapper you also need to: `pip install scispacy`
 
 ### 2. Launch the App
 
@@ -49,8 +54,8 @@ python app.py --csv reports.csv --yaml task.yaml --output annotations.json
 The CSV file should include the following columns:
 
 ```csv
-Patient-ID,Report-ID,Text
-P001,R001,"Patient report text..."
+Patient-ID,Report-ID,Report-Date,Text
+P001,R001,"01-01-2025","Patient report text..."
 ```
 
 Each row corresponds to a report that will be annotated.
@@ -77,6 +82,7 @@ groups:
 Controls can include sliders, checkboxes, dropdowns, and more.
 
 ➡️ [View example YAML](assets/example.yaml)
+- [View additional YAML configs](configs/)
 
 ### JSON Output
 
@@ -95,11 +101,14 @@ Annotations are saved using the following structure:
 
 Each entry is indexed by the report ID, and includes both metadata and annotated values.
 
+### CSV Export
+
+In the viewer annotations can be exported to CSV under file.
+
 ## 🛠️ Coming Soon
 
-- Multi-annotator support
-- Undo/redo functionality  
-- JSON mapping back to original CSV
+- Undo/redo functionality
+- More Hotkeys for faster annotation
 
 ## 📬 Feedback & Contributions
 

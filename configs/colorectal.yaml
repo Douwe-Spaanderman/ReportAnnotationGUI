@@ -1,0 +1,87 @@
+name: "Pathology Report Annotation"
+instructions: |
+  Extract information from pathology reports. Follow all constraints and use the provided options where specified.
+
+groups:
+  - label: "Specimen Information"
+    controls:
+      - label: "PA-number"
+        type: "text"
+        placeholder: "e.g., H11-11914"
+        required: true
+
+      - label: "Material Type"
+        type: "text"
+        placeholder: "e.g., Rectumcarcinoom, levermetastase"
+        required: true
+
+      - label: "Resection Margins"
+        type: "radio"
+        options: ["Free", "Not free", "Not specified"]
+        required: true
+
+  - label: "Slide Information"
+    controls:
+      - label: "Slide Identification"
+        type: "group"
+        controls:
+          - label: "Slide A"
+            type: "text"
+            placeholder: "e.g., vries"
+          
+          - label: "Slide B"
+            type: "text"
+            placeholder: "e.g., rectum resectie vlak"
+          
+          - label: "Slide C"
+            type: "text"
+            placeholder: "e.g., lymfeklier"
+
+      - label: "Lymph Node Information"
+        type: "group"
+        controls:
+          - label: "Lymph Node Size"
+            type: "text"
+            placeholder: "Enter size in mm"
+          
+          - label: "Distance from Resection Margin"
+            type: "text"
+            placeholder: "Enter distance in mm"
+
+  - label: "Tumor Characteristics"
+    controls:
+      - label: "Tumor Type"
+        type: "text"
+        placeholder: "e.g., Colontype slijmvlies, crypten aanwezig, exofytisch"
+        required: true
+
+      - label: "Tumor Extension"
+        type: "text"
+        placeholder: "Describe how far tumor has grown"
+
+      - label: "Inflammatory Infiltrate"
+        type: "radio"
+        options: ["Present", "Absent", "Not specified"]
+
+      - label: "Atypical Cells"
+        type: "text"
+        placeholder: "e.g., Cilindrisch, rond, goblet cells"
+
+      - label: "Nuclear Types"
+        type: "text"
+        placeholder: "Describe nuclear characteristics"
+
+      - label: "Perineural Growth"
+        type: "radio"
+        options: ["Present", "Absent", "Not specified"]
+
+      - label: "Lymphangioinvasive Growth"
+        type: "radio"
+        options: ["Present", "Absent", "Not specified"]
+
+  - label: "Genetic Information"
+    controls:
+      - label: "Lynch Syndrome"
+        type: "radio"
+        options: ["Present", "Absent", "Not tested", "Not specified"]
+        required: true

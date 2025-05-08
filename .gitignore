@@ -30,7 +30,6 @@ MANIFEST
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
-*.spec
 
 # Installer logs
 pip-log.txt
@@ -135,6 +134,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+build_venv/
 
 # Spyder project settings
 .spyderproject
@@ -174,3 +174,5 @@ cython_debug/
 .pypirc
 
 data/*
+annotations.json
+annotator_settings.json
