@@ -9,6 +9,7 @@ A lightweight, PyQt5-based GUI for annotating medical reports using structured t
 - Save validated annotations to a structured JSON file, and export back to CSV
 - Multi-user annotation support with individual tracking
 - Multi-report annotation support
+- Match free-text fields directly to UMLS
 
 ## ⚡ Quick Start
 
@@ -17,6 +18,8 @@ A lightweight, PyQt5-based GUI for annotating medical reports using structured t
 ```bash
 pip install pyqt5 pyyaml
 ```
+
+When using UMLS mapper you also need to: `pip install scispacy`
 
 ### 2. Launch the App
 
@@ -79,6 +82,7 @@ groups:
 Controls can include sliders, checkboxes, dropdowns, and more.
 
 ➡️ [View example YAML](assets/example.yaml)
+- [View additional YAML configs](configs/)
 
 ### JSON Output
 
@@ -97,9 +101,14 @@ Annotations are saved using the following structure:
 
 Each entry is indexed by the report ID, and includes both metadata and annotated values.
 
+### CSV Export
+
+In the viewer annotations can be exported to CSV under file.
+
 ## 🛠️ Coming Soon
 
 - Undo/redo functionality
+- More Hotkeys for faster annotation
 
 ## 📬 Feedback & Contributions
 
