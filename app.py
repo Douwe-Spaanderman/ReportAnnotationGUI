@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
     QSizePolicy, QFrame, QDateEdit, QGridLayout, QToolButton,
     QProgressDialog
 )
-from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal, QEventLoop
 from PyQt5.QtGui import QFont, QPixmap
 
 class QHLine(QFrame):
@@ -24,6 +24,19 @@ class QHLine(QFrame):
         self.setFrameShape(QFrame.HLine)
         self.setFrameShadow(QFrame.Sunken)
         self.setStyleSheet("color: #ccc;")
+
+class UMLSMapperLoader(QThread):
+    finished = pyqtSignal(object)
+
+    def run(self):
+        import spacy
+        from scispacy.linking import EntityLinker
+        nlp = spacy.blank("en")
+        nlp.add_pipe("scispacy_linker", config={
+            "resolve_abbreviations": True,
+            "linker_name": "umls"
+        })
+        self.finished.emit(nlp)
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
@@ -784,27 +797,31 @@ class AnnotationApp(QMainWindow):
         """Search UMLS for the given text and populate dropdown with results."""
         try:
             if not hasattr(self, 'nlp'):
-                # Initialize NLP and linker only once
-                # Show loading indicator
-                loading_dialog = QProgressDialog("Searching UMLS...", None, 0, 0, self)
+                # Initialize UMLS linker
+                loading_dialog = QProgressDialog("Downloading UMLS linker, this takes some time, please wait...", None, 0, 0, self)
                 loading_dialog.setCancelButton(None)
                 loading_dialog.setWindowModality(Qt.WindowModal)
+                loading_dialog.setWindowTitle("Loading")
                 loading_dialog.show()
-                QApplication.processEvents()  # Force UI update
-                import spacy
-                from scispacy.linking import EntityLinker
-                loading_dialog.setLabelText("Loading NLP model...")
                 QApplication.processEvents()
-                
-                self.nlp = spacy.load("en_core_sci_sm")
-                
-                loading_dialog.setLabelText("Loading UMLS linker...")
-                QApplication.processEvents()
-                self.nlp.add_pipe("scispacy_linker", 
-                                config={"resolve_abbreviations": True, 
-                                        "linker_name": "umls"})
+
+                loop = QEventLoop()
+                nlp_container = {}
+
+                # Load the NLP model in a separate thread to avoid blocking the UI
+                def on_finished(nlp):
+                    nlp_container['nlp'] = nlp
+                    loop.quit()
+
+                loader = UMLSMapperLoader()
+                loader.finished.connect(on_finished)
+                loader.start()
+
+                loop.exec_()
+
                 loading_dialog.close()
-            
+                self.nlp = nlp_container['nlp']
+                
             # Clear previous results
             dropdown.clear()
             match_checkbox.setEnabled(False)
