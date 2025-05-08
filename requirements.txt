@@ -20,7 +20,6 @@ markdown-it-py==3.0.0
 MarkupSafe==2.1.5
 mdurl==0.1.2
 murmurhash==1.0.12
-nmslib==2.1.1
 numpy==1.24.4
 packaging==25.0
 preshed==3.0.9
