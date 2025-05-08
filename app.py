@@ -13,10 +13,10 @@ from PyQt5.QtWidgets import (
     QLineEdit, QComboBox, QSplitter, QFileDialog, QDialog, 
     QAction, QDesktopWidget, QCompleter, QScrollArea,
     QSizePolicy, QFrame, QDateEdit, QGridLayout, QToolButton,
-    QProgressDialog
+    QProgressDialog, QShortcut
 )
 from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal, QEventLoop
-from PyQt5.QtGui import QFont, QPixmap
+from PyQt5.QtGui import QFont, QPixmap, QKeySequence
 
 class QHLine(QFrame):
     def __init__(self):
@@ -257,6 +257,9 @@ class AnnotationApp(QMainWindow):
         # Setup UI
         self.init_ui()
         self.apply_styles()
+
+        # Setup keybindings
+        self.init_keybindings()
         
         # If paths were provided via command line, try to initialize directly
         if csv_path and yaml_path:
@@ -268,6 +271,16 @@ class AnnotationApp(QMainWindow):
         else:
             # Show settings dialog if no paths were provided
             self.show_settings_dialog(initial=True)
+
+    def init_keybindings(self):
+        # Handle global hotkeys
+        QShortcut(QKeySequence("Ctrl+Right"), self, self.next_button.click)
+        QShortcut(QKeySequence("Ctrl+Left"), self, self.prev_button.click)
+        QShortcut(QKeySequence("Ctrl+O"), self, lambda: self.show_settings_dialog(initial=False))
+        QShortcut(QKeySequence("Ctrl+S"), self, self.save_button.click)
+        QShortcut(QKeySequence("Ctrl+E"), self, self.save_annotations_to_csv)
+        QShortcut(QKeySequence("Ctrl+Q"), self, self.close)
+        QShortcut(QKeySequence("Ctrl+H"), self, self.show_about_dialog)
     
     def init_ui(self):
         """Initialize all UI components."""
@@ -821,7 +834,7 @@ class AnnotationApp(QMainWindow):
 
                 loading_dialog.close()
                 self.nlp = nlp_container['nlp']
-                
+
             # Clear previous results
             dropdown.clear()
             match_checkbox.setEnabled(False)
