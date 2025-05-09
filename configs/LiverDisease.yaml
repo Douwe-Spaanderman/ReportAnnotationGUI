@@ -1,0 +1,20 @@
+name: "Liver tumor finding common disease types"  
+instructions: |
+  The task is to annotate the disease type of liver tumors in the medical report.
+  
+  You have two options:
+  1. "Option 1: Disease Type" control is a dropdown menu where you can pick a disease type, if not found in the list, you can write it down. This will save the disease type in the database for next entries. Make sure to press ENTER.
+  2. "Option 2: Disease Type UMLS" is pretty much the same. You check if the disease type is in the dropdown menu. If not found in the list, you can write the disease type in the free text field below, and link to UMLS (hourglass icon). Afterwards when clicking the checkbox the entry will be saved in the database and will be available for next entries. The only real difference is that you homogenous your disease types while annotating.
+
+  You could also simply remove one of the options from the yaml file if you want to use only one of them.
+
+groups:  
+  - label: "Option 1: Disease Type"
+    type: "dropdown"
+    dynamic: true
+    options: []
+  - label: "Option 2: Disease Type with UMLS matching"
+    type: "dropdown"
+    dynamic: true
+    mapper: true
+    options: []

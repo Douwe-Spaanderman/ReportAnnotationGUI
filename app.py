@@ -238,6 +238,7 @@ class AnnotationApp(QMainWindow):
         self.current_annotator_name = "Unnamed"
         self.all_annotations = []  # Stores all annotations in flat list
         self.current_report_annotations = {}  # Current annotator's annotations for the report
+        self.dynamic_dropdown_options = {}  # Store options for dynamic dropdowns
 
         # Initialize settings with defaults
         self.settings = {
@@ -717,45 +718,21 @@ class AnnotationApp(QMainWindow):
                         self.required_controls.append(checkbox)
 
                 elif item["type"] == "text" and item.get("mapper", False):
-                    # Create mapper control layout
+                    # Create mapper control using modular components
                     mapper_layout = QHBoxLayout()
                     
-                    # Text field
-                    text_field = QLineEdit()
-                    text_field.setPlaceholderText(item.get("placeholder", ""))
-                    if "default" in item:
-                        text_field.setText(item["default"])
-                    mapper_layout.addWidget(text_field, stretch=2)
+                    # Get UMLS components
+                    umls_components = self.create_umls_mapper_components(item["label"], item)
+                    umls_components = self.setup_umls_mapper_connections(umls_components, item["label"])
                     
-                    # Update button
-                    update_button = QPushButton("🔍")
-                    update_button.setToolTip("Search UMLS")
-                    update_button.setFixedWidth(30)
-                    mapper_layout.addWidget(update_button)
-                    
-                    # Dropdown for UMLS results
-                    umls_dropdown = QComboBox()
-                    umls_dropdown.setFixedWidth(250)
-                    mapper_layout.addWidget(umls_dropdown, stretch=1)
-                    
-                    # Checkbox for match confirmation
-                    match_checkbox = QCheckBox("Match?")
-                    match_checkbox.setEnabled(False)
-                    mapper_layout.addWidget(match_checkbox)
+                    # Add to layout
+                    mapper_layout.addWidget(umls_components['text'], stretch=2)
+                    mapper_layout.addWidget(umls_components['search_button'])
+                    mapper_layout.addWidget(umls_components['results_dropdown'], stretch=1)
+                    mapper_layout.addWidget(umls_components['match_checkbox'])
                     
                     # Store references
-                    self.controls[label] = {
-                        'text': text_field,
-                        'dropdown': umls_dropdown,
-                        'update': update_button,
-                        'match_checkbox': match_checkbox
-                    }
-                    
-                    # Connect signals
-                    update_button.clicked.connect(
-                        lambda _, t=text_field, d=umls_dropdown, c=match_checkbox: 
-                        self.search_umls(t.text(), d, c))
-                    
+                    self.controls[item["label"]] = umls_components
                     parent_layout.addLayout(mapper_layout)
                 elif item["type"] == "text":
                     text_field = QLineEdit()
@@ -778,14 +755,28 @@ class AnnotationApp(QMainWindow):
                         self.required_controls.append(date_field)
 
                 elif item["type"] == "dropdown":
-                    combo = QComboBox()
-                    combo.addItems(item["options"])
-                    if "default" in item and item["default"] in item["options"]:
-                        combo.setCurrentText(item["default"])
-                    parent_layout.addWidget(combo)
-                    self.controls[label] = combo
-                    if item.get("required", False):
-                        self.required_controls.append(combo)
+                    if item.get("dynamic", False):
+                        if item.get("mapper", False):
+                            # Create combined dynamic dropdown + full UMLS mapper
+                            container, components = self.create_dynamic_dropdown_with_mapper(item["label"], item)
+                            self.controls[item["label"]] = components
+                            parent_layout.addWidget(container)
+                        else:
+                            # Simple dynamic dropdown without UMLS
+                            components = self.create_dynamic_dropdown(item["label"], item)
+                            layout = QHBoxLayout()
+                            layout.addWidget(components['dropdown'], stretch=1)
+                            self.controls[item["label"]] = components
+                            parent_layout.addLayout(layout)
+                    else:
+                        combo = QComboBox()
+                        combo.addItems(item["options"])
+                        if "default" in item and item["default"] in item["options"]:
+                            combo.setCurrentText(item["default"])
+                        parent_layout.addWidget(combo)
+                        self.controls[label] = combo
+                        if item.get("required", False):
+                            self.required_controls.append(combo)
 
                 elif item["type"] == "autocomplete":
                     text_field = QLineEdit()
@@ -805,6 +796,42 @@ class AnnotationApp(QMainWindow):
                     self.controls[label] = text_field
                     if item.get("required", False):
                         self.required_controls.append(text_field)
+
+    def create_umls_mapper_components(self, label, item):
+        """Create and return UMLS mapper components as a dictionary."""
+        components = {}
+        
+        # Text field
+        components['text'] = QLineEdit()
+        components['text'].setPlaceholderText(item.get("placeholder", ""))
+        if "default" in item:
+            components['text'].setText(item["default"])
+        
+        # Search button
+        components['search_button'] = QPushButton("🔍")
+        components['search_button'].setToolTip("Search UMLS")
+        components['search_button'].setFixedWidth(30)
+        
+        # Results dropdown
+        components['results_dropdown'] = QComboBox()
+        components['results_dropdown'].setFixedWidth(250)
+        
+        # Match checkbox
+        components['match_checkbox'] = QCheckBox("Match?")
+        components['match_checkbox'].setEnabled(False)
+        
+        return components
+
+    def setup_umls_mapper_connections(self, components, label):
+        """Set up signal connections for UMLS mapper components."""
+        components['search_button'].clicked.connect(
+            lambda: self.search_umls(
+                components['text'].text(),
+                components['results_dropdown'],
+                components['match_checkbox']
+            )
+        )
+        return components
 
     def search_umls(self, text, dropdown, match_checkbox):
         """Search UMLS for the given text and populate dropdown with results."""
@@ -888,6 +915,98 @@ class AnnotationApp(QMainWindow):
         if dropdown.currentIndex() >= 0:
             concept_id, canonical_name, score = dropdown.currentData()
             text_field.setText(canonical_name)
+
+    def create_dynamic_dropdown(self, label, item):
+        """Create a simple dynamic dropdown without UMLS mapper."""
+        components = {}
+        
+        # Main dropdown
+        components['dropdown'] = QComboBox()
+        components['dropdown'].setEditable(True)
+        initial_options = item.get("options", []) + self.dynamic_dropdown_options.get(label, [])
+        components['dropdown'].addItems(list(set(initial_options)))  # Remove duplicates
+        components['dropdown'].setInsertPolicy(QComboBox.InsertAtTop)
+        components['dropdown'].lineEdit().setPlaceholderText("Type to add new option")
+        
+        # Store config
+        components['dropdown'].dynamic_config = {
+            'label': label,
+            'mapper': False,
+            'is_dynamic': True
+        }
+        
+        return components
+
+    def create_dynamic_dropdown_with_mapper(self, label, item):
+        """Create a combined dynamic dropdown with full UMLS mapper functionality."""
+        components = {}
+        
+        # Create container widget for the two rows
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # --- First Row: Dynamic Dropdown ---
+        dropdown_row = QHBoxLayout()
+        
+        # Main dropdown
+        components['dropdown'] = QComboBox()
+        components['dropdown'].setEditable(True)
+        initial_options = item.get("options", []) + self.dynamic_dropdown_options.get(label, [])
+        components['dropdown'].addItems(list(set(initial_options)))  # Remove duplicates
+        components['dropdown'].setInsertPolicy(QComboBox.InsertAtTop)
+        components['dropdown'].lineEdit().setPlaceholderText("Type to add new option")
+        
+        dropdown_row.addWidget(components['dropdown'], stretch=1)
+        layout.addLayout(dropdown_row)
+        
+        # --- Second Row: Full UMLS Mapper ---
+        mapper_row = QHBoxLayout()
+        
+        # Create full UMLS mapper components
+        umls_components = self.create_umls_mapper_components(label, item)
+        components.update(umls_components)
+        
+        # Add to layout
+        mapper_row.addWidget(components['text'], stretch=2)
+        mapper_row.addWidget(components['search_button'])
+        mapper_row.addWidget(components['results_dropdown'], stretch=1)
+        mapper_row.addWidget(components['match_checkbox'])
+        layout.addLayout(mapper_row)
+        
+        # Store config
+        components['dropdown'].dynamic_config = {
+            'label': label,
+            'mapper': True,
+            'is_dynamic': True
+        }
+        
+        # Connect signals
+        components = self.setup_umls_mapper_connections(components, label)
+        
+        # When UMLS match is confirmed, add to main dropdown
+        components['match_checkbox'].stateChanged.connect(
+            lambda state: self.add_confirmed_umls_to_dropdown(
+                components['results_dropdown'],
+                components['dropdown'],
+                state
+            )
+        )
+        
+        return container, components
+
+    def add_confirmed_umls_to_dropdown(self, results_dropdown, main_dropdown, state):
+        """Add confirmed UMLS match to the main dropdown."""
+        if state == Qt.Checked and results_dropdown.currentIndex() >= 0:
+            item_text = results_dropdown.currentText()
+            item_data = results_dropdown.currentData()
+            
+            # Add to main dropdown if not already present
+            if main_dropdown.findText(item_text) == -1:
+                main_dropdown.addItem(item_text, item_data)
+            
+            # Select it in the main dropdown
+            main_dropdown.setCurrentText(item_text)
 
     def create_collapsible_group(self, group_config):
         """Create a collapsible group box with toggle button on the right."""
@@ -980,8 +1099,10 @@ class AnnotationApp(QMainWindow):
                     data = json.load(f)
                     if isinstance(data, dict) and "annotations" in data:
                         self.all_annotations = data["annotations"]
+                        self.dynamic_dropdown_options = data.get("dropdown_options", {})
                     elif isinstance(data, list):
                         self.all_annotations = data
+                        # TODO check if dropdown option works in list
             except Exception as e:
                 QMessageBox.warning(self, "Warning", f"Could not load annotations: {str(e)}")
         
@@ -993,15 +1114,59 @@ class AnnotationApp(QMainWindow):
         if not self.current_patient_reports:
             return
         
-        # For single report mode
-        if not self.group_patient_reports:
-            report_id = self.current_patient_reports[0]["Report-ID"]
-            annotations = self.current_report_annotations.get(report_id, {})
-            
-            for label, control in self.controls.items():
+        def load_controls(controls, annotations):
+            for label, control in controls.items():
                 if label in annotations:
                     value = annotations[label]
-                    if isinstance(control, QSlider):
+                    if isinstance(control, dict):
+                        # Handle combined dynamic dropdown + UMLS mapper
+                        if 'dropdown' in control and 'results_dropdown' in control and value.get('is_dynamic', False) and value.get('is_mapper', False):
+                            # Load options from global storage
+                            options = self.dynamic_dropdown_options.get(label, [])
+                            control['dropdown'].clear()
+                            control['dropdown'].addItems(options)
+
+                            selected = value.get('selected', '')
+                            index = control['dropdown'].findText(selected)
+                            if index >= 0:
+                                control['dropdown'].setCurrentIndex(index)
+                            else:
+                                control['dropdown'].setCurrentText(selected)
+                            
+                            # Restore UMLS mapper state
+                            control['text'].setText(value.get('text', ''))
+                            if 'umls_data' in value:
+                                control['results_dropdown'].clear()
+                                umls_data = value['umls_data']
+                                display_text = f"{umls_data['canonical_name']} (Score: {umls_data['score']:.2f})"
+                                control['results_dropdown'].addItem(display_text, umls_data)
+                                control['match_checkbox'].setChecked(value.get('match_confirmed', False))
+                                control['match_checkbox'].setEnabled(True)
+                        
+                        # Handle simple dynamic dropdown
+                        elif 'dropdown' in control and value.get('is_dynamic', False):
+                            # Load options from global storage
+                            options = self.dynamic_dropdown_options.get(label, [])
+                            control['dropdown'].clear()
+                            control['dropdown'].addItems(options)
+                            selected = value.get('selected', '')
+                            index = control['dropdown'].findText(selected)
+                            if index >= 0:
+                                control['dropdown'].setCurrentIndex(index)
+                            else:
+                                control['dropdown'].setCurrentText(selected)
+                        
+                        # Handle regular UMLS mapper
+                        elif 'results_dropdown' in control and value.get('is_mapper', False):
+                            control['text'].setText(value.get('text', ''))
+                            if 'umls_data' in value:
+                                control['results_dropdown'].clear()
+                                umls_data = value['umls_data']
+                                display_text = f"{umls_data['canonical_name']} (Score: {umls_data['score']:.2f})"
+                                control['results_dropdown'].addItem(display_text, umls_data)
+                                control['match_checkbox'].setChecked(value.get('match_confirmed', False))
+                                control['match_checkbox'].setEnabled(True)
+                    elif isinstance(control, QSlider):
                         control.setValue(value)
                     elif isinstance(control, QButtonGroup):
                         for button in control.buttons():
@@ -1010,70 +1175,26 @@ class AnnotationApp(QMainWindow):
                                 break
                     elif isinstance(control, QCheckBox):
                         control.setChecked(value)
-                    elif isinstance(control, dict) and 'text' in control:
-                        control['text'].setText(str(value.get("text", "")))
-                        # Handle UMLS dropdown
-                        ulms = value.get("umls_selection", {})
-                        concept_id = ulms.get("cui", "")
-                        canonical_name = ulms.get("canonical_name", "")
-                        score = ulms.get("score", "")
-                        types = ulms.get("types", [])
-
-                        display_text = f"{canonical_name} (Score: {score:.2f}, CUI: {concept_id})"
-                        control['dropdown'].addItem(display_text, {
-                            'cui': concept_id,
-                            'canonical_name': canonical_name,
-                            'score': score,
-                            'types': types
-                        })
-                        control['match_checkbox'].setChecked(value.get("match_checkbox", False))
                     elif isinstance(control, QLineEdit):
                         control.setText(str(value))
                     elif isinstance(control, QDateEdit):
                         control.setDate(QDate.fromString(value, "dd-MM-yyyy") if value else QDate(2000, 1, 1))
                     elif isinstance(control, QComboBox):
                         control.setCurrentText(str(value))
-        
+
+            return controls
+
+        # For single report mode
+        if not self.group_patient_reports:
+            report_id = self.current_patient_reports[0]["Report-ID"]
+            annotations = self.current_report_annotations.get(report_id, {})
+            self.controls = load_controls(self.controls, annotations)
+            
         # For group mode
         else:
             first_report_id = self.current_patient_reports[0]["Report-ID"]
             annotations = self.current_report_annotations.get(first_report_id, {})
-            
-            for label, control in self.controls.items():
-                if label in annotations:
-                    value = annotations[label]
-                    if isinstance(control, QSlider):
-                        control.setValue(value)
-                    elif isinstance(control, QButtonGroup):
-                        for button in control.buttons():
-                            if button.text() == value:
-                                button.setChecked(True)
-                                break
-                    elif isinstance(control, QCheckBox):
-                        control.setChecked(value)
-                    elif isinstance(control, dict) and 'text' in control:
-                        control['text'].setText(str(value.get("text", "")))
-                        # Handle UMLS dropdown
-                        ulms = value.get("umls_selection", {})
-                        concept_id = ulms.get("cui", "")
-                        canonical_name = ulms.get("canonical_name", "")
-                        score = ulms.get("score", "")
-                        types = ulms.get("types", [])
-
-                        display_text = f"{canonical_name} (Score: {score:.2f}, CUI: {concept_id})"
-                        control['dropdown'].addItem(display_text, {
-                            'cui': concept_id,
-                            'canonical_name': canonical_name,
-                            'score': score,
-                            'types': types
-                        })
-                        control['match_checkbox'].setChecked(value.get("match_checkbox", False))
-                    elif isinstance(control, QLineEdit):
-                        control.setText(str(value))
-                    elif isinstance(control, QDateEdit):
-                        control.setDate(QDate.fromString(value, "dd-MM-yyyy"))
-                    elif isinstance(control, QComboBox):
-                        control.setCurrentText(str(value))
+            self.controls = load_controls(self.controls, annotations)
 
     def save_and_next(self):
         """Save current annotations and move to next unannotated entry."""
@@ -1204,55 +1325,79 @@ class AnnotationApp(QMainWindow):
     def collect_annotation_data(self):
         """Gather all control values for current reports."""
         collected_data = {}
+
+        def check_controls(controls):
+            annotations = {}
+            for label, control in controls.items():
+                if isinstance(control, dict):
+                    # Handle combined dynamic dropdown + UMLS mapper
+                    if 'dropdown' in control and 'results_dropdown' in control:
+                        dropdown = control['dropdown']
+                        current_text = dropdown.currentText()
+                        options = [dropdown.itemText(i) for i in range(dropdown.count())]
+                        self.dynamic_dropdown_options[label] = options
+                        
+                        # Prepare data
+                        data = {
+                            'selected': current_text,
+                            'is_dynamic': True,
+                            'is_mapper': True,
+                            'text': control['text'].text()
+                        }
+                    
+                        # Add UMLS data if available
+                        if control['results_dropdown'].currentIndex() >= 0:
+                            data['umls_data'] = control['results_dropdown'].currentData()
+                            data['match_confirmed'] = control['match_checkbox'].isChecked()
+                
+                    # Handle simple dynamic dropdown
+                    elif 'dropdown' in control:
+                        dropdown = control['dropdown']
+                        current_text = dropdown.currentText()
+                        options = [dropdown.itemText(i) for i in range(dropdown.count())]
+                        self.dynamic_dropdown_options[label] = options
+                        
+                        data = {
+                            'selected': current_text,
+                            'is_dynamic': True
+                        }
+                    
+                    # Handle regular UMLS mapper
+                    elif 'results_dropdown' in control:
+                        data = {
+                            'text': control['text'].text(),
+                            'is_mapper': True
+                        }
+                        
+                        if control['results_dropdown'].currentIndex() >= 0:
+                            data['umls_data'] = control['results_dropdown'].currentData()
+                            data['match_confirmed'] = control['match_checkbox'].isChecked()
+                    
+                    annotations[label] = data
+                elif isinstance(control, QSlider):
+                    annotations[label] = control.value()
+                elif isinstance(control, QButtonGroup):
+                    checked = control.checkedButton()
+                    annotations[label] = checked.text() if checked else None
+                elif isinstance(control, QCheckBox):
+                    annotations[label] = control.isChecked()
+                elif isinstance(control, QLineEdit):
+                    annotations[label] = control.text()
+                elif isinstance(control, QDateEdit):
+                    annotations[label] = control.date().toString("dd-MM-yyyy") if not control.date().toString("dd-MM-yyyy") == "01-01-2000" else None
+                elif isinstance(control, QComboBox):
+                    annotations[label] = control.currentText()
+            
+            return annotations
         
         if not self.group_patient_reports:
             # Single report mode - same as before
             report_id = self.current_patient_reports[0]["Report-ID"]
-            report_data = {}
-            for label, control in self.controls.items():
-                if isinstance(control, QSlider):
-                    report_data[label] = control.value()
-                elif isinstance(control, QButtonGroup):
-                    checked = control.checkedButton()
-                    report_data[label] = checked.text() if checked else None
-                elif isinstance(control, QCheckBox):
-                    report_data[label] = control.isChecked()
-                elif isinstance(control, dict) and 'text' in control:
-                    report_data[label] = {
-                        'text': control['text'].text(),
-                        'umls_selection': control['dropdown'].currentData() if control['dropdown'].currentIndex() >= 0 else None,
-                        'match_checkbox': control['match_checkbox'].isChecked()
-                    }
-                elif isinstance(control, QLineEdit):
-                    report_data[label] = control.text()
-                elif isinstance(control, QDateEdit):
-                    report_data[label] = control.date().toString("dd-MM-yyyy") if not control.date().toString("dd-MM-yyyy") == "01-01-2000" else None
-                elif isinstance(control, QComboBox):
-                    report_data[label] = control.currentText()
-            collected_data[report_id] = report_data
+            collected_data[report_id] = check_controls(self.controls)
+            
         else:
             # Group mode - collect current control values
-            current_annotations = {}
-            for label, control in self.controls.items():
-                if isinstance(control, QSlider):
-                    current_annotations[label] = control.value()
-                elif isinstance(control, QButtonGroup):
-                    checked = control.checkedButton()
-                    current_annotations[label] = checked.text() if checked else None
-                elif isinstance(control, QCheckBox):
-                    current_annotations[label] = control.isChecked()
-                elif isinstance(control, dict) and 'text' in control:
-                    current_annotations[label] = {
-                        'text': control['text'].text(),
-                        'umls_selection': control['dropdown'].currentData() if control['dropdown'].currentIndex() >= 0 else None,
-                        'match_checkbox': control['match_checkbox'].isChecked()
-                    }
-                elif isinstance(control, QLineEdit):
-                    current_annotations[label] = control.text()
-                elif isinstance(control, QDateEdit):
-                    current_annotations[label] = control.date().toString("dd-MM-yyyy") if not control.date().toString("dd-MM-yyyy") == "01-01-2000" else None
-                elif isinstance(control, QComboBox):
-                    current_annotations[label] = control.currentText()
+            current_annotations = check_controls(self.controls)
             
             # Create combined report ID string for display
             report_ids = [r["Report-ID"] for r in self.current_patient_reports]
@@ -1270,7 +1415,28 @@ class AnnotationApp(QMainWindow):
     def clear_controls(self):
         """Reset all input controls to default values"""
         for label, control in self.controls.items():
-            if isinstance(control, QSlider):
+            if isinstance(control, dict):
+                # Handle dynamic dropdowns
+                if 'dropdown' in control:
+                    options = self.dynamic_dropdown_options.get(label, [])
+                    control['dropdown'].clear()
+                    control['dropdown'].addItems(options)
+                    if hasattr(control['dropdown'], 'dynamic_config') and control['dropdown'].dynamic_config.get('mapper', False):
+                        
+                        default = next((item.get("default", "") for item in self.find_control_config(label) if "default" in item), "")
+                        control['text'].setText(default)
+                        control['results_dropdown'].clear()
+                        control['match_checkbox'].setChecked(False)
+                        control['match_checkbox'].setEnabled(False)
+                
+                # Handle regular UMLS mappers
+                elif 'results_dropdown' in control:
+                    default = next((item.get("default", "") for item in self.find_control_config(label) if "default" in item), "")
+                    control['text'].setText(default)
+                    control['results_dropdown'].clear()
+                    control['match_checkbox'].setChecked(False)
+                    control['match_checkbox'].setEnabled(False)
+            elif isinstance(control, QSlider):
                 control.setValue(control.minimum())
             elif isinstance(control, QButtonGroup):
                 control.setExclusive(False)
@@ -1279,12 +1445,6 @@ class AnnotationApp(QMainWindow):
                 control.setExclusive(True)
             elif isinstance(control, QCheckBox):
                 control.setChecked(False)
-            elif isinstance(control, dict) and 'text' in control:
-                # Reset to default if specified in YAML, else empty
-                default = next((item.get("default", "") for item in self.find_control_config(label) if "default" in item), "")
-                control['text'].setText(default)
-                control['dropdown'].clear()
-                control['match_checkbox'].setChecked(False)
             elif isinstance(control, QLineEdit):  # Text field
                 # Reset to default if specified in YAML, else empty
                 default = next((item.get("default", "") for item in self.find_control_config(label) if "default" in item), "")
@@ -1353,6 +1513,7 @@ class AnnotationApp(QMainWindow):
             with open(self.output_path, 'w') as f:
                 json.dump({
                     "annotations": self.all_annotations,
+                    "dropdown_options": self.dynamic_dropdown_options,
                     "timestamp": datetime.datetime.now().isoformat()
                 }, f, indent=2)
             
