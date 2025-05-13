@@ -677,6 +677,9 @@ class AnnotationApp(QMainWindow):
                     # Create collapsible group
                     group = self.create_collapsible_group(item)
                     parent_layout.addWidget(group)
+                    if "depends_on" in item:
+                        item["dependent_widget"] = group
+                        group.setVisible(False)  # Hide initially if dependent
                 else:
                     # Regular group
                     group = QGroupBox(item["label"])
@@ -684,36 +687,47 @@ class AnnotationApp(QMainWindow):
                     self.add_controls(sub_layout, item["controls"])
                     group.setLayout(sub_layout)
                     parent_layout.addWidget(group)
+                    if "depends_on" in item:
+                        item["dependent_widget"] = group
+                        group.setVisible(False)  # Hide initially if dependent
             elif "groups" in item:  # Nested Group
                 self.add_controls(parent_layout, item["groups"])
             else:  # Control
-                label = item["label"]
-                parent_layout.addWidget(QLabel(label))
+                dependent_widgets = []
+                
+                # Add label if not a checkbox (since checkbox has built-in label)
+                if item["type"] != "checkbox":
+                    label = QLabel(item["label"])
+                    parent_layout.addWidget(label)
+                    dependent_widgets.append(label)
                 
                 if item["type"] == "slider":
                     slider = QSlider(Qt.Horizontal)
                     slider.setRange(item["min"], item["max"])
                     slider.setValue(item["min"])  # Set default to min
                     parent_layout.addWidget(slider)
-                    self.controls[label] = slider
+                    self.controls[item["label"]] = slider
+                    dependent_widgets.append(slider)
                     if item.get("required", False):
                         self.required_controls.append(slider)
                         
                 elif item["type"] == "radio":
                     group = QButtonGroup()
-                    self.button_groups[label] = group
+                    self.button_groups[item["label"]] = group
                     for option in item["options"]:
                         radio = QRadioButton(option)
                         parent_layout.addWidget(radio)
                         group.addButton(radio)
-                    self.controls[label] = group
+                        dependent_widgets.append(radio)
+                    self.controls[item["label"]] = group
                     if item.get("required", False):
                         self.required_controls.append(group)
                         
                 elif item["type"] == "checkbox":
-                    checkbox = QCheckBox(label)
+                    checkbox = QCheckBox(item["label"])
                     parent_layout.addWidget(checkbox)
-                    self.controls[label] = checkbox
+                    self.controls[item["label"]] = checkbox
+                    dependent_widgets.append(checkbox)
                     if item.get("required", False):
                         self.required_controls.append(checkbox)
 
@@ -733,6 +747,12 @@ class AnnotationApp(QMainWindow):
                     
                     # Store references
                     self.controls[item["label"]] = umls_components
+                    dependent_widgets.extend([
+                        umls_components['text'],
+                        umls_components['search_button'],
+                        umls_components['results_dropdown'],
+                        umls_components['match_checkbox']
+                    ])
                     parent_layout.addLayout(mapper_layout)
                 elif item["type"] == "text":
                     text_field = QLineEdit()
@@ -740,7 +760,8 @@ class AnnotationApp(QMainWindow):
                     if "default" in item:
                         text_field.setText(item["default"])
                     parent_layout.addWidget(text_field)
-                    self.controls[label] = text_field
+                    self.controls[item["label"]] = text_field
+                    dependent_widgets.append(text_field)
                     if item.get("required", False):
                         self.required_controls.append(text_field)
                 
@@ -750,7 +771,8 @@ class AnnotationApp(QMainWindow):
                     date_field.setCalendarPopup(True)
                     date_field.setDate(QDate(2000, 1, 1))
                     parent_layout.addWidget(date_field)
-                    self.controls[label] = date_field
+                    self.controls[item["label"]] = date_field
+                    dependent_widgets.append(date_field)
                     if item.get("required", False):
                         self.required_controls.append(date_field)
 
@@ -761,6 +783,8 @@ class AnnotationApp(QMainWindow):
                             container, components = self.create_dynamic_dropdown_with_mapper(item["label"], item)
                             self.controls[item["label"]] = components
                             parent_layout.addWidget(container)
+                            if "depends_on" in item:
+                                item["dependent_widget"] = container
                         else:
                             # Simple dynamic dropdown without UMLS
                             components = self.create_dynamic_dropdown(item["label"], item)
@@ -768,13 +792,16 @@ class AnnotationApp(QMainWindow):
                             layout.addWidget(components['dropdown'], stretch=1)
                             self.controls[item["label"]] = components
                             parent_layout.addLayout(layout)
+                            if "depends_on" in item:
+                                dependent_widgets.append(components['dropdown'])
                     else:
                         combo = QComboBox()
                         combo.addItems(item["options"])
                         if "default" in item and item["default"] in item["options"]:
                             combo.setCurrentText(item["default"])
                         parent_layout.addWidget(combo)
-                        self.controls[label] = combo
+                        self.controls[item["label"]] = combo
+                        dependent_widgets.append(combo)
                         if item.get("required", False):
                             self.required_controls.append(combo)
 
@@ -785,7 +812,7 @@ class AnnotationApp(QMainWindow):
                     # Create completer with options
                     completer = QCompleter(item["options"])
                     completer.setCaseSensitivity(Qt.CaseInsensitive)
-                    completer.setFilterMode(Qt.MatchContains)  # Match anywhere in string
+                    completer.setFilterMode(Qt.MatchContains)
                     completer.setCompletionMode(QCompleter.PopupCompletion)
                     text_field.setCompleter(completer)
                     
@@ -793,9 +820,72 @@ class AnnotationApp(QMainWindow):
                         text_field.setText(item["default"])
                     
                     parent_layout.addWidget(text_field)
-                    self.controls[label] = text_field
+                    self.controls[item["label"]] = text_field
+                    dependent_widgets.append(text_field)
                     if item.get("required", False):
                         self.required_controls.append(text_field)
+
+                # Store dependent widgets if this item has dependencies
+                if "depends_on" in item and dependent_widgets:
+                    item["dependent_widgets"] = dependent_widgets
+                    for widget in dependent_widgets:
+                        widget.setVisible(False)  # Hide initially
+
+            # Set up dependency connections if this item depends on another control
+            if "depends_on" in item:
+                controlling_widget = self.controls[item["depends_on"]["control"]]
+                
+                # Connect the appropriate signal based on widget type
+                if isinstance(controlling_widget, QButtonGroup):
+                    controlling_widget.buttonClicked.connect(
+                        lambda _, i=item: self.update_dependent_visibility(i))
+                elif isinstance(controlling_widget, (QCheckBox, QRadioButton)):
+                    controlling_widget.toggled.connect(
+                        lambda _, i=item: self.update_dependent_visibility(i))
+                elif isinstance(controlling_widget, QComboBox):
+                    controlling_widget.currentIndexChanged.connect(
+                        lambda _, i=item: self.update_dependent_visibility(i))
+                elif isinstance(controlling_widget, QLineEdit):
+                    controlling_widget.textChanged.connect(
+                        lambda _, i=item: self.update_dependent_visibility(i))
+                
+                # Check initial visibility
+                self.update_dependent_visibility(item)
+
+    def update_dependent_visibility(self, item):
+        """Show/hide controls based on their dependency conditions"""
+        if "depends_on" not in item:
+            return
+        
+        controlling_widget = self.controls[item["depends_on"]["control"]]
+        condition_met = False
+        
+        # Evaluate condition based on controlling widget type
+        if isinstance(controlling_widget, QButtonGroup):
+            selected_button = controlling_widget.checkedButton()
+            if selected_button:
+                selected_value = selected_button.text()
+                condition_met = selected_value in item["depends_on"]["values"]
+        elif isinstance(controlling_widget, (QCheckBox, QRadioButton)):
+            current_value = controlling_widget.isChecked()
+            condition_met = current_value in item["depends_on"]["values"]
+        elif isinstance(controlling_widget, QComboBox):
+            current_value = controlling_widget.currentText()
+            condition_met = current_value in item["depends_on"]["values"]
+        elif isinstance(controlling_widget, QLineEdit):
+            current_value = controlling_widget.text()
+            condition_met = current_value in item["depends_on"]["values"]
+        
+        # Show/hide the dependent widget(s)
+        if "dependent_widget" in item:  # For groups
+            item["dependent_widget"].setVisible(condition_met)
+        elif "dependent_widgets" in item:  # For individual controls
+            for widget in item["dependent_widgets"]:
+                widget.setVisible(condition_met)
+        
+        # Update the layout
+        if hasattr(self, 'annotation_layout'):
+            self.annotation_layout.update()
 
     def create_umls_mapper_components(self, label, item):
         """Create and return UMLS mapper components as a dictionary."""
