@@ -1662,8 +1662,16 @@ class AnnotationApp(QMainWindow):
                 "combined_report_ids"
             ]
             
-            # Combine and order fields
-            all_fields = standard_fields + sorted(f for f in fieldnames if f not in standard_fields)
+            first_annotation_fields = list(self.all_annotations[0]["annotation"].keys())
+            additional_fields = [f for f in first_annotation_fields if f not in standard_fields]
+
+            # Ensure any missing fields from other annotations are still included (preserve first, append new)
+            for annotation in self.all_annotations[1:]:
+                for key in annotation["annotation"].keys():
+                    if key not in additional_fields and key not in standard_fields:
+                        additional_fields.append(key)
+
+            all_fields = standard_fields + additional_fields
 
             with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=all_fields)
