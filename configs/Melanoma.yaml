@@ -1,0 +1,160 @@
+name: "Melanoma Pathology Annotation"
+instructions: |
+  1. Review the pathology report carefully
+  2. Annotate the requested information
+  3. Click 'Save' when complete
+
+groups:
+  - label: "Initial Information"
+    controls:
+      - type: radio
+        label: "Primary melanoma"
+        options: ["Yes", "No", "Not specified"]
+        default: "Not specified"
+        required: true
+
+      - type: radio
+        label: "Report a revision"
+        options: ["Yes", "No", "Not specified"]
+        default: "Not specified"
+        required: true
+
+      - type: dropdown
+        label: "Specimen Type"
+        options: ["Biopsy", "Resection", "Cytology", "Other", "Not specified"]
+        default: "Not specified"
+        required: true
+
+  # Controls shown when Primary melanoma is "Yes"
+  - label: "If Primary melanoma is Yes"
+    controls:
+      - type: radio
+        label: "Multiple primary melanoma"
+        options: ["Yes", "No", "Not specified"]
+        default: "Not specified"
+        required: false
+        depends_on:
+          control: "Primary melanoma"
+          values: ["Yes"]
+          
+      - type: radio
+        label: "In situ melanoma"
+        options: ["Yes", "No", "Not specified"]
+        default: "Not specified"
+        required: false
+        depends_on:
+          control: "Primary melanoma"
+          values: ["Yes"]
+          
+      - type: text
+        label: "Breslow thickness (mm)"
+        placeholder: "0.0-400.0"
+        validator: "float:0.0-400.0"
+        required: false
+        depends_on:
+          control: "Primary melanoma"
+          values: ["Yes"]
+          
+      - type: radio
+        label: "Ulceration"
+        options: ["Yes", "No", "Not specified"]
+        default: "Not specified"
+        required: false
+        depends_on:
+          control: "Primary melanoma"
+          values: ["Yes"]
+          
+      - type: dropdown
+        label: "Location of melanoma"
+        options: ["Head and Neck", "Trunk", "Upper extremity", "Lower extremity", "Not specified"]
+        default: "Not specified"
+        required: false
+        depends_on:
+          control: "Primary melanoma"
+          values: ["Yes"]
+          
+      - type: dropdown
+        label: "Subtype of melanoma"
+        options: ["superficial spreading melanoma", "Nodular melanoma", "Acral melanoma", "Desmoplastic melanoma", "Not specified"]
+        default: "Not specified"
+        required: false
+        depends_on:
+          control: "Primary melanoma"
+          values: ["Yes"]
+
+      - type: radio
+        label: "Mitosis described"
+        options: ["Yes", "No", "Not specified"]
+        default: "Not specified"
+        required: false
+        depends_on:
+          control: "Primary melanoma"
+          values: ["Yes"]
+
+      - type: text
+        label: "If mitosis described, how many mitosis"
+        placeholder: "0.0-100.0"
+        validator: "float:0.0-100.0"
+        required: false
+        depends_on:
+          control: "Mitosis described"
+          values: ["Yes"]
+
+      - type: radio
+        label: "lymphatic invasion"
+        options: ["Yes", "No", "Not specified"]
+        default: "Not specified"
+        required: false
+        depends_on:
+          control: "Primary melanoma"
+          values: ["Yes"]
+          
+  - label: "If Primary melanoma is No"
+    controls:
+      # Controls shown when Primary melanoma is "No"
+      - type: radio
+        label: "Specimen the sentinel lymph node biopsy"
+        options: ["Yes", "No", "Not specified"]
+        default: "Not specified"
+        required: false
+        depends_on:
+          control: "Primary melanoma"
+          values: ["No"]
+          
+      # Sub-questions for sentinel lymph node biopsy
+      - type: radio
+        label: "Contained the sentinel lymph node biopsy metastases"
+        options: ["Yes", "No", "Not specified"]
+        default: "Not specified"
+        required: false
+        depends_on:
+          control: "Specimen the sentinel lymph node biopsy"
+          values: ["Yes"]
+          
+      - type: text
+        label: "Tumour burden in the sentinel lymph node (mm)"
+        placeholder: "0.01-200.00"
+        validator: "float:0.01-200.00"
+        default: "Not specified"
+        required: false
+        depends_on:
+          control: "Contained the sentinel lymph node biopsy metastases"
+          values: ["Yes"]
+          
+      - type: radio
+        label: "Is it melanoma metastasis"
+        options: ["Yes", "No", "Unknown", "Not specified"]
+        default: "Not specified"
+        required: false
+        depends_on:
+          control: "Contained the sentinel lymph node biopsy metastases"
+          values: ["No"]
+          
+      - type: dropdown
+        label: "Type of melanoma metastasis"
+        options: ["In transit", "Lymph node metastasis", "Distant metastasis", "Not specified"]
+        default: "Not specified"
+        required: false
+        depends_on:
+          control: "Specimen the sentinel lymph node biopsy"
+          values: ["No"]
