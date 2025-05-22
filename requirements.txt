@@ -20,10 +20,8 @@ markdown-it-py==3.0.0
 MarkupSafe==2.1.5
 mdurl==0.1.2
 murmurhash==1.0.12
-nmslib==2.1.1
 numpy==1.24.4
 packaging==25.0
-pkg_resources==0.0.0
 preshed==3.0.9
 psutil==7.0.0
 pybind11==2.6.1
@@ -33,8 +31,6 @@ Pygments==2.19.1
 pyinstaller==6.13.0
 pyinstaller-hooks-contrib==2025.4
 PyQt5==5.15.11
-PyQt5-Qt5==5.15.16
-PyQt5_sip==12.15.0
 pysbd==0.3.4
 python-dateutil==2.9.0.post0
 PyYAML==6.0.2
@@ -47,8 +43,6 @@ shellingham==1.5.4
 six==1.17.0
 smart-open==7.1.0
 spacy==3.7.5
-spacy-legacy==3.0.12
-spacy-loggers==1.0.5
 srsly==2.4.8
 thinc==8.2.5
 threadpoolctl==3.5.0
