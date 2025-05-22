@@ -50,7 +50,6 @@ groups:
         label: "Breslow thickness (mm)"
         placeholder: "0.0-400.0"
         validator: "float:0.0-400.0"
-        default: "Not specified"
         required: false
         depends_on:
           control: "Primary melanoma"
@@ -77,6 +76,32 @@ groups:
       - type: dropdown
         label: "Subtype of melanoma"
         options: ["superficial spreading melanoma", "Nodular melanoma", "Acral melanoma", "Desmoplastic melanoma", "Not specified"]
+        required: false
+        depends_on:
+          control: "Primary melanoma"
+          values: ["Yes"]
+
+      - type: radio
+        label: "Mitosis described"
+        options: ["Yes", "No", "Not specified"]
+        default: "Not specified"
+        required: false
+        depends_on:
+          control: "Primary melanoma"
+          values: ["Yes"]
+
+      - type: text
+        label: "If mitosis described, how many mitosis"
+        placeholder: "0.0-100.0"
+        validator: "float:0.0-100.0"
+        required: false
+        depends_on:
+          control: "Mitosis described"
+          values: ["Yes"]
+
+      - type: radio
+        label: "lymphatic invasion"
+        options: ["Yes", "No", "Not specified"]
         default: "Not specified"
         required: false
         depends_on:
@@ -109,7 +134,6 @@ groups:
         label: "Tumour burden in the sentinel lymph node (mm)"
         placeholder: "0.01-200.00"
         validator: "float:0.01-200.00"
-        default: "Not specified"
         required: false
         depends_on:
           control: "Contained the sentinel lymph node biopsy metastases"
@@ -127,7 +151,6 @@ groups:
       - type: dropdown
         label: "Type of melanoma metastasis"
         options: ["In transit", "Lymph node metastasis", "Distant metastasis", "Not specified"]
-        default: "Not specified"
         required: false
         depends_on:
           control: "Specimen the sentinel lymph node biopsy"
